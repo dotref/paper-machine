@@ -1,33 +1,50 @@
 from flask import Flask, request, jsonify
 from typing import Dict, Any
-import logging
-"""
-# Test the home page
-curl http://localhost:5000/
+import asyncio
+from pathlib import Path
 
-# Test health check
-curl http://localhost:5000/health
+# Import configurations
+from config import config
 
-# Test upload endpoint
-curl -X POST http://localhost:5000/upload -F "file=assets/test.txt" # consider changing to pdfs in your test
+# Import utilities
+from utils import setup_logging, get_logger, timer
 
-# Test search endpoint
-curl -X POST http://localhost:5000/search -H "Content-Type: application/json" -d '{"query": "test search"}'
+# Import agents
+from agents import get_agent, AgentResponse
 
-# Test query endpoint
-curl -X POST http://localhost:5000/query -H "Content-Type: application/json" -d '{"query": "test query"}'
+# Import models
+from models import (
+    OpenAIEmbedding,
+    VectorRetriever, 
+    LLMGenerator,
+    Document,
+    QueryResult
+)
 
-# Test models listing
-curl http://localhost:5000/models
+# Import data loader
+from data_loader.database import get_db_handler
+from data_loader.parsers.parsers import PDFParser, TextParser, ImageParser
 
-# Test specific model info
-curl http://localhost:5000/models/model1
-"""
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# Setup logging
+setup_logging(log_level="DEBUG", log_file="app.log")
+logger = get_logger(__name__)
 
 app = Flask(__name__)
+
+
+# Initialize components (with minimal implementations)
+embedding_model = OpenAIEmbedding(config=config.openai.__dict__)
+retriever = VectorRetriever(embedding_model=embedding_model)
+generator = LLMGenerator(config=config.openai.__dict__)
+db_handler = get_db_handler()
+
+# Initialize parsers
+parsers = {
+    '.pdf': PDFParser(),
+    '.txt': TextParser(),
+    '.jpg': ImageParser(),
+    '.png': ImageParser()
+}
 
 # Error Handlers
 @app.errorhandler(404)
@@ -42,77 +59,170 @@ def internal_server_error(error) -> Dict[str, Any]:
 
 # Health Check
 @app.route("/health", methods=["GET"])
+@timer
 def health_check() -> Dict[str, str]:
     logger.info("Health check requested")
-    return jsonify({"status": "healthy"})
+    return jsonify({
+        "status": "healthy",
+        "components": {
+            "database": db_handler.connected,
+            "embedding_model": bool(embedding_model),
+            "retriever": bool(retriever),
+            "generator": bool(generator)
+        }
+    })
 
 # Main Routes
 @app.route("/", methods=["GET"])
 def index() -> Dict[str, str]:
     logger.info("Index page accessed")
     return jsonify({
-        "message": "Welcome to Paper Machine API"
+        "message": "Welcome to the backend API, reach out to Tony if you need help, thanks!",
+        "available_endpoints": [
+            "/health",
+            "/upload",
+            "/query",
+            "/search"
+        ]
     })
 
 # Document Upload
 @app.route("/upload", methods=["POST"])
+@timer
 def upload_document():
-    logger.info("Document upload initiated")
-    # Debug info about the upload request
-    files = request.files
-    logger.debug(f"Received files: {list(files.keys())}")
+    logger.info("Upload endpoint triggered")
+    
+    if 'file' not in request.files:
+        logger.info("No file part in request")
+        return jsonify({"message": "No file provided"}), 400
+        
+    file = request.files['file']
+    if file.filename == '':
+        logger.info("No selected file")
+        return jsonify({"message": "No filename provided"}), 400
+
+    # Log file information
+    logger.info(f"File upload attempted - Filename: {file.filename}")
     
     return jsonify({
-        "message": "Upload endpoint accessed",
-        "files_received": len(files),
-        "status": "upload handler not yet implemented"
+        "message": "File upload received",
+        "filename": file.filename,
+        "status": "processed"
     })
+
 
 # Query Endpoint
 @app.route("/query", methods=["POST"])
+@timer
 def process_query():
-    logger.info("Query processing initiated")
-    query_data = request.get_json()
-    logger.debug(f"Received query: {query_data}")
+    """
+    Query endpoint provides RAG-based answers:
+    - Retrieves relevant context
+    - Generates new response
+    - Question answering focus
     
+    Example request:
+    {
+        "query": "what are the key findings in recent ML papers?",
+        "response_format": "detailed"
+    }
+    """
+    logger.info("Query endpoint triggered")
+    data = request.get_json()
     return jsonify({
-        "message": "Query endpoint accessed",
-        "query_received": query_data,
-        "status": "query processor not yet implemented"
+        "message": "Query received",
+        "query": data.get('query', ''),
+        "status": "processed"
     })
 
 # Search Endpoint
 @app.route("/search", methods=["POST"])
+@timer
 def search():
-    logger.info("Search initiated")
-    search_params = request.get_json()
-    logger.debug(f"Search parameters: {search_params}")
+    """
+    Search endpoint focuses on document retrieval:
+    - Returns relevant documents/passages
+    - No generation/answering
+    - Pure vector similarity search
     
+    Example request:
+    {
+        "query": "machine learning papers",
+        "limit": 5,
+        "filters": {"year": 2023, "topic": "AI"}
+    }
+    """
+    logger.info("Search endpoint triggered")
+    data = request.get_json()
     return jsonify({
-        "message": "Search endpoint accessed",
-        "search_params": search_params,
-        "status": "search function not yet implemented"
+        "message": "Search received",
+        "query": data.get('query', ''),
+        "status": "processed"
     })
 
 # Model Management
 @app.route("/models", methods=["GET"])
+@timer
 def list_models():
     logger.info("Model listing requested")
     return jsonify({
-        "message": "Model listing endpoint accessed",
-        "models": [],
-        "status": "model listing not yet implemented"
+        "models": {
+            "embedding": embedding_model.__class__.__name__,
+            "retriever": retriever.__class__.__name__,
+            "generator": generator.__class__.__name__
+        }
     })
 
 @app.route("/models/<model_id>", methods=["GET"])
+@timer
 def get_model_info(model_id: str):
     logger.info(f"Model info requested for model_id: {model_id}")
+    
+    models = {
+        "embedding": embedding_model,
+        "retriever": retriever,
+        "generator": generator
+    }
+    
+    if model_id not in models:
+        return jsonify({"error": "Model not found"}), 404
+        
     return jsonify({
-        "message": f"Model info endpoint accessed for model: {model_id}",
         "model_id": model_id,
-        "status": "model info retrieval not yet implemented"
+        "type": models[model_id].__class__.__name__,
+        "status": "active"
     })
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")
     app.run(debug=True, host="0.0.0.0", port=5000)
+    """
+    # Entry point - Get API info
+    curl http://localhost:5000/
+
+    # Health check
+    curl http://localhost:5000/health
+
+    # Upload a file (replace path/to/file.pdf with actual file path)
+    curl -X POST http://localhost:5000/upload -F "file=@../assets/test.txt"
+
+    # Process a query
+    curl -X POST http://localhost:5000/query \
+    -H "Content-Type: application/json" \
+    -d '{ 
+        "query": "What is machine learning?" 
+    }'
+
+    # Search documents
+    curl -X POST http://localhost:5000/search \
+    -H "Content-Type: application/json" \
+    -d '{
+        "query": "find documents about AI"
+    }'
+
+    # List available models
+    curl http://localhost:5000/models
+
+    # Get specific model info
+    curl http://localhost:5000/models/embedding
+"""

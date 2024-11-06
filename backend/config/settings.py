@@ -2,6 +2,8 @@ import os
 from typing import Dict, Any
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
 @dataclass
 class OpenAIConfig:
     api_key: str
@@ -26,6 +28,7 @@ class ParserConfig:
 
 class Config:
     def __init__(self):
+        load_dotenv()
         # Initialize OpenAI configuration
         self.openai = OpenAIConfig(
             api_key=os.getenv('OPENAI_API_KEY', ''),
