@@ -1,7 +1,28 @@
 from flask import Flask, request, jsonify
 from typing import Dict, Any
 import logging
+"""
+# Test the home page
+curl http://localhost:5000/
 
+# Test health check
+curl http://localhost:5000/health
+
+# Test upload endpoint
+curl -X POST http://localhost:5000/upload -F "file=assets/test.txt" # consider changing to pdfs in your test
+
+# Test search endpoint
+curl -X POST http://localhost:5000/search -H "Content-Type: application/json" -d '{"query": "test search"}'
+
+# Test query endpoint
+curl -X POST http://localhost:5000/query -H "Content-Type: application/json" -d '{"query": "test query"}'
+
+# Test models listing
+curl http://localhost:5000/models
+
+# Test specific model info
+curl http://localhost:5000/models/model1
+"""
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -95,11 +116,3 @@ def get_model_info(model_id: str):
 if __name__ == "__main__":
     logger.info("Starting Flask application...")
     app.run(debug=True, host="0.0.0.0", port=5000)
-    # # Test upload
-    # curl -X POST http://localhost:5000/upload -F "file=@test.pdf"
-
-    # # Test search
-    # curl -X POST http://localhost:5000/search -H "Content-Type: application/json" -d '{"query": "test search"}'
-
-    # # Test query
-    # curl -X POST http://localhost:5000/query -H "Content-Type: application/json" -d '{"query": "test query"}'

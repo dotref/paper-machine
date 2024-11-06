@@ -30,9 +30,7 @@ backend/
 │   ├── __init__.py
 │   ├── parsers/
 │   │   ├── __init__.py
-│   │   ├── pdf_parser.py
-│   │   ├── text_parser.py
-│   │   └── image_parser.py
+│   │   ├── parsers.py
 │   └── database/
 │       ├── __init__.py
 │       └── db_handler.py
