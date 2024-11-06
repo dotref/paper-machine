@@ -1,12 +1,11 @@
 import os
 
-os.environ['OPENAI_API_KEY'] = "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"
-
 import qdrant_client
 from llama_index.core import SimpleDirectoryReader
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.core import VectorStoreIndex, StorageContext
 from llama_index.core.indices import MultiModalVectorStoreIndex
+from llama_index.core.schema import ImageNode, ImageDocument
 
 from llama_index.multi_modal_llms.openai import OpenAIMultiModal
 
@@ -39,7 +38,6 @@ def retrieve_documents(text_query: str = None, image_query: str = None):
     if not text_query and not image_query:
         return [], []
     
-    from llama_index.core.schema import ImageNode
     retrieved_images = set()
     retrieved_texts = set()
     retriever = index.as_retriever(similarity_top_k=3, image_similarity_top_k=5)
@@ -71,8 +69,10 @@ def process_prompt(prompt: str):
     query = prompt
     retrieved_images, retrieved_texts = retrieve_documents(text_query=query)
 
+    image_documents = [ImageDocument(image_path=path) for path in retrieved_images]
+
     llm = OpenAIMultiModal(model="gpt-4o", api_key=os.environ.get("OPENAI_API_KEY"), max_new_tokens=1500)
-    response = llm.complete(prompt=prompt, image_documents=retrieved_images)
+    response = llm.complete(prompt=prompt, image_documents=image_documents)
 
     # Can also use index as query engine for rag
     # query_engine = index.as_query_engine(llm=llm, image_qa_template=qa_tmpl)
@@ -81,5 +81,12 @@ def process_prompt(prompt: str):
 
 if __name__ == "__main__":
     # run data.py to ensure data folder is populated before creating the index
-    prompt = "what are Vincent van Gogh's famous paintings?"
-    print(process_prompt(prompt))
+    while True:
+        prompt = input("Enter prompt (quit to exit): ")
+        if prompt.lower() == "quit":
+            break
+        try:
+            response = process_prompt(prompt)
+            print(response)
+        except Exception as e:
+            print(f"Error: {e}")
