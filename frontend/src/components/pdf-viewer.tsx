@@ -26,7 +26,7 @@ export default function PdfViewer() {
                 />
                 <label htmlFor="pdf-upload">
                     <Button variant="outline" className="w-full" asChild>
-                        <span>Upload PDF</span>
+                        <span className="cursor-pointer">Upload PDF</span>
                     </Button>
                 </label>
             </div>
