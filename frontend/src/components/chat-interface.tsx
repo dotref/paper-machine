@@ -27,8 +27,8 @@ export default function ChatInterface() {
     }
 
     return (
-        <div className="flex flex-col h-full border rounded-lg p-4">
-            <div className="flex-grow overflow-auto mb-4 space-y-4">
+        <div className="flex flex-col h-[calc(100vh-2rem)] border rounded-lg p-4">
+            <div className="flex-grow overflow-y-auto mb-4 space-y-4">
                 {messages.map((msg, index) => (
                     <div key={index} className="bg-muted p-3 rounded-lg">
                         <div className="text-sm text-muted-foreground flex justify-between">
