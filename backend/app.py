@@ -123,8 +123,7 @@ def upload_document():
             
             # Process the file based on its type
             if file_ext in parsers:
-                # Here you would actually process the file with your parser
-                # For now, we'll just acknowledge receipt
+                # TODO: Add actual processing logic here + database
                 logger.info(f"File saved successfully: {filename}")
                 
                 return jsonify({
@@ -186,7 +185,7 @@ def process_query():
         
         # TODO: Add actual query logic using rag here
         response = {
-            "message": f"Echo: {query}",  # You can modify this to include your actual response
+            "message": f"Echo: {query}",
             "status": "processed",
             "timestamp": datetime.now().isoformat()
         }
