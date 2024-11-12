@@ -1,7 +1,10 @@
+from datetime import datetime
 from flask import Flask, request, jsonify
 from typing import Dict, Any
 import asyncio
 from pathlib import Path
+from flask_cors import CORS
+
 
 # Import configurations
 from config import config
@@ -9,20 +12,7 @@ from config import config
 # Import utilities
 from utils import setup_logging, get_logger, timer
 
-# Import agents
-from agents import get_agent, AgentResponse
-
-# Import models
-from models import (
-    OpenAIEmbedding,
-    VectorRetriever, 
-    LLMGenerator,
-    Document,
-    QueryResult
-)
-
 # Import data loader
-from data_loader.database import get_db_handler
 from data_loader.parsers.parsers import PDFParser, TextParser, ImageParser
 
 # Setup logging
@@ -30,13 +20,7 @@ setup_logging(log_level="DEBUG", log_file="app.log")
 logger = get_logger(__name__)
 
 app = Flask(__name__)
-
-
-# Initialize components (with minimal implementations)
-embedding_model = OpenAIEmbedding(config=config.openai.__dict__)
-retriever = VectorRetriever(embedding_model=embedding_model)
-generator = LLMGenerator(config=config.openai.__dict__)
-db_handler = get_db_handler()
+CORS(app)  # Enable CORS
 
 # Initialize parsers
 parsers = {
@@ -65,10 +49,7 @@ def health_check() -> Dict[str, str]:
     return jsonify({
         "status": "healthy",
         "components": {
-            "database": db_handler.connected,
-            "embedding_model": bool(embedding_model),
-            "retriever": bool(retriever),
-            "generator": bool(generator)
+            "fields": "To be added"
         }
     })
 
@@ -77,12 +58,11 @@ def health_check() -> Dict[str, str]:
 def index() -> Dict[str, str]:
     logger.info("Index page accessed")
     return jsonify({
-        "message": "Welcome to the backend API, reach out to Tony if you need help, thanks!",
+        "message": "Welcome to the backend API",
         "available_endpoints": [
             "/health",
             "/upload",
-            "/query",
-            "/search"
+            "/query"
         ]
     })
 
@@ -129,73 +109,21 @@ def process_query():
     """
     logger.info("Query endpoint triggered")
     data = request.get_json()
-    return jsonify({
-        "message": "Query received",
-        "query": data.get('query', ''),
-        "status": "processed"
-    })
-
-# Search Endpoint
-@app.route("/search", methods=["POST"])
-@timer
-def search():
-    """
-    Search endpoint focuses on document retrieval:
-    - Returns relevant documents/passages
-    - No generation/answering
-    - Pure vector similarity search
+    query = data.get('query', '')
     
-    Example request:
-    {
-        "query": "machine learning papers",
-        "limit": 5,
-        "filters": {"year": 2023, "topic": "AI"}
-    }
-    """
-    logger.info("Search endpoint triggered")
-    data = request.get_json()
-    return jsonify({
-        "message": "Search received",
-        "query": data.get('query', ''),
-        "status": "processed"
-    })
-
-# Model Management
-@app.route("/models", methods=["GET"])
-@timer
-def list_models():
-    logger.info("Model listing requested")
-    return jsonify({
-        "models": {
-            "embedding": embedding_model.__class__.__name__,
-            "retriever": retriever.__class__.__name__,
-            "generator": generator.__class__.__name__
-        }
-    })
-
-@app.route("/models/<model_id>", methods=["GET"])
-@timer
-def get_model_info(model_id: str):
-    logger.info(f"Model info requested for model_id: {model_id}")
+    # TODO: add query processing logics here
     
-    models = {
-        "embedding": embedding_model,
-        "retriever": retriever,
-        "generator": generator
+    response = {
+        "message": f"Received your message: {query}",
+        "status": "processed",
+        "timestamp": datetime.datetime.now().isoformat()
     }
     
-    if model_id not in models:
-        return jsonify({"error": "Model not found"}), 404
-        
-    return jsonify({
-        "model_id": model_id,
-        "type": models[model_id].__class__.__name__,
-        "status": "active"
-    })
+    return jsonify(response)
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=3000)
     """
     # Entry point - Get API info
     curl http://localhost:5000/
@@ -213,16 +141,4 @@ if __name__ == "__main__":
         "query": "What is machine learning?" 
     }'
 
-    # Search documents
-    curl -X POST http://localhost:5000/search \
-    -H "Content-Type: application/json" \
-    -d '{
-        "query": "find documents about AI"
-    }'
-
-    # List available models
-    curl http://localhost:5000/models
-
-    # Get specific model info
-    curl http://localhost:5000/models/embedding
 """
