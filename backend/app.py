@@ -4,7 +4,7 @@ from typing import Dict, Any
 import asyncio
 from pathlib import Path
 from flask_cors import CORS
-
+import os
 
 # Import configurations
 from config import config
@@ -15,12 +15,35 @@ from utils import setup_logging, get_logger, timer
 # Import data loader
 from data_loader.parsers.parsers import PDFParser, TextParser, ImageParser
 
+from werkzeug.utils import secure_filename
+
+# Add these configurations after creating the Flask app
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'pdf', 'txt'}
+
+# Create uploads directory if it doesn't exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 # Setup logging
 setup_logging(log_level="DEBUG", log_file="app.log")
 logger = get_logger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:3000",  # Next.js default dev port
+            "http://127.0.0.1:3000"
+        ]
+    }
+})
+
 
 # Initialize parsers
 parsers = {
@@ -74,21 +97,61 @@ def upload_document():
     
     if 'file' not in request.files:
         logger.info("No file part in request")
-        return jsonify({"message": "No file provided"}), 400
+        return jsonify({
+            "message": "No file provided",
+            "status": "error"
+        }), 400
         
     file = request.files['file']
     if file.filename == '':
         logger.info("No selected file")
-        return jsonify({"message": "No filename provided"}), 400
+        return jsonify({
+            "message": "No filename provided",
+            "status": "error"
+        }), 400
 
-    # Log file information
-    logger.info(f"File upload attempted - Filename: {file.filename}")
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        try:
+            # Save the file
+            file.save(file_path)
+            
+            # Get file extension
+            file_ext = os.path.splitext(filename)[1].lower()
+            
+            # Process the file based on its type
+            if file_ext in parsers:
+                # Here you would actually process the file with your parser
+                # For now, we'll just acknowledge receipt
+                logger.info(f"File saved successfully: {filename}")
+                
+                return jsonify({
+                    "message": f"File uploaded successfully",
+                    "filename": filename,
+                    "status": "processed",
+                    "file_type": file_ext[1:].upper()  # Remove the dot and capitalize
+                })
+            else:
+                os.remove(file_path)  # Remove unsupported file
+                return jsonify({
+                    "message": "Unsupported file type",
+                    "status": "error"
+                }), 400
+                
+        except Exception as e:
+            logger.error(f"Error saving file: {str(e)}")
+            return jsonify({
+                "message": "Error saving file",
+                "status": "error",
+                "error": str(e)
+            }), 500
     
     return jsonify({
-        "message": "File upload received",
-        "filename": file.filename,
-        "status": "processed"
-    })
+        "message": "Invalid file type",
+        "status": "error"
+    }), 400
 
 
 # Query Endpoint
@@ -108,22 +171,36 @@ def process_query():
     }
     """
     logger.info("Query endpoint triggered")
-    data = request.get_json()
-    query = data.get('query', '')
     
-    # TODO: add query processing logics here
-    
-    response = {
-        "message": f"Received your message: {query}",
-        "status": "processed",
-        "timestamp": datetime.datetime.now().isoformat()
-    }
-    
-    return jsonify(response)
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+            
+        query = data.get('query', '')
+        if not query:
+            return jsonify({"error": "No query provided"}), 400
+            
+        # Log the received query
+        logger.info(f"Received query: {query}")
+        
+        # TODO: Add actual query logic using rag here
+        response = {
+            "message": f"Echo: {query}",  # You can modify this to include your actual response
+            "status": "processed",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        logger.info(f"Sending response: {response}")
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error processing query: {str(e)}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")
-    app.run(debug=True, host="0.0.0.0", port=3000)
+    app.run(debug=True, host="0.0.0.0", port=5000)
     """
     # Entry point - Get API info
     curl http://localhost:5000/

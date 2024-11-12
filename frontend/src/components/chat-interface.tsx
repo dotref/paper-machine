@@ -2,27 +2,95 @@
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 interface Message {
     text: string;
     timestamp: Date;
     sender: string;
+    response?: string;  // Added to handle backend responses
 }
 
 export default function ChatInterface() {
     const [message, setMessage] = useState("")
     const [messages, setMessages] = useState<Message[]>([])
+    const [isLoading, setIsLoading] = useState(false)
 
-    const handleSubmit = (e: React.FormEvent) => {
+    useEffect(() => {
+        const handleFileUpload = (event: CustomEvent) => {
+            const { filename, status, message } = event.detail;
+            
+            const systemMessage: Message = {
+                text: message,
+                timestamp: new Date(),
+                sender: 'System',
+                response: status
+            };
+            
+            setMessages(prev => [...prev, systemMessage]);
+        };
+
+        // Add event listener
+        window.addEventListener('fileUploaded', handleFileUpload as EventListener);
+
+        // Cleanup
+        return () => {
+            window.removeEventListener('fileUploaded', handleFileUpload as EventListener);
+        };
+    }, []);
+
+    // Added: Function to communicate with backend
+    const queryBackend = async (userMessage: string) => {
+        try {
+            const response = await fetch('http://localhost:5000/query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    query: userMessage
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Error:', error);
+            return { message: 'Error connecting to server' };
+        }
+    }
+
+    // Modified: handleSubmit to include backend communication
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (message.trim()) {
-            setMessages([...messages, {
+            setIsLoading(true)  // Start loading
+
+            // Add user message
+            const userMessage: Message = {
                 text: message,
                 timestamp: new Date(),
                 sender: 'User'
-            }])
+            }
+            setMessages(prev => [...prev, userMessage])
+
+            // Get response from backend
+            const response = await queryBackend(message)
+            
+            // Add system response
+            const systemMessage: Message = {
+                text: response.message || 'No response from server',
+                timestamp: new Date(),
+                sender: 'System',
+                response: response.status
+            }
+            setMessages(prev => [...prev, systemMessage])
+
             setMessage("")
+            setIsLoading(false)  // End loading
         }
     }
 
