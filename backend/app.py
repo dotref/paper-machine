@@ -1,7 +1,10 @@
+from datetime import datetime
 from flask import Flask, request, jsonify
 from typing import Dict, Any
 import asyncio
 from pathlib import Path
+from flask_cors import CORS
+
 
 # Import configurations
 from config import config
@@ -17,6 +20,7 @@ setup_logging(log_level="DEBUG", log_file="app.log")
 logger = get_logger(__name__)
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS
 
 # Initialize parsers
 parsers = {
@@ -105,15 +109,21 @@ def process_query():
     """
     logger.info("Query endpoint triggered")
     data = request.get_json()
-    return jsonify({
-        "message": "Query received",
-        "query": data.get('query', ''),
-        "status": "processed"
-    })
+    query = data.get('query', '')
+    
+    # TODO: add query processing logics here
+    
+    response = {
+        "message": f"Received your message: {query}",
+        "status": "processed",
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+    
+    return jsonify(response)
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=3000)
     """
     # Entry point - Get API info
     curl http://localhost:5000/
