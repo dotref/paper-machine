@@ -21,7 +21,7 @@ from llama_index.core.base.response.schema import Response
 class RAGManager:
     def __init__(
         self,
-        data_dir: str = "../data/",
+        data_dir: str = "data/",
         vector_store_dir: str = "stored_vector_embeddings",
         summary_store_dir: str = "stored_summary_embeddings",
         chunk_size: int = 1024,
@@ -79,6 +79,10 @@ class RAGManager:
         if self.nodes is None:
             raise ValueError("Documents not loaded. Call load_documents() first.")
         
+        # https://docs.llamaindex.ai/en/stable/understanding/indexing/indexing/
+        # https://docs.llamaindex.ai/en/stable/module_guides/indexing/index_guide/
+        # Summary index simply stores Nodes as a sequential chain.
+        # Vector index takes documents as input and then creates vector embeddings of the text of every node
         self.vector_index = VectorStoreIndex(self.nodes)
         self.summary_index = SummaryIndex(self.nodes)
         
@@ -167,10 +171,10 @@ def main():
     
     # Either load new documents and build indices
     rag.load_documents()
-    rag.build_indices()
+    # rag.build_indices()
     
     # Or load existing indices
-    # rag.load_indices()
+    rag.load_indices()
     
     # Setup query engine
     rag.setup_query_engine()
