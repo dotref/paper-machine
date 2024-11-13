@@ -7,12 +7,15 @@ clone the repo, then follow the steps under `Frontend` and `Backend`
 ## Frontend
 
 ## Backend
+
+Open another terminal
+
 ```
-cd backend
 pip install -r requirements.txt
 ```
 
 ```
+cd backend
 python app.py
 ```
 
