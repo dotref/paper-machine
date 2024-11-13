@@ -7,6 +7,7 @@ from flask_cors import CORS
 import os
 
 # Import configurations
+from agents.agentic_rag import MultiDocumentRAG
 from config import config
 
 # Import utilities
@@ -43,6 +44,8 @@ CORS(app, resources={
         ]
     }
 })
+
+rag = MultiDocumentRAG()
 
 
 # Initialize parsers
@@ -125,7 +128,8 @@ def upload_document():
             if file_ext in parsers:
                 # TODO: Add actual processing logic here + database
                 logger.info(f"File saved successfully: {filename}")
-                
+                cleaned_filename = ''.join(char for char in filename if char.isalnum() or char in '_-')
+                rag.add_document(file_path, cleaned_filename)
                 return jsonify({
                     "message": f"File uploaded successfully",
                     "filename": filename,
@@ -184,14 +188,32 @@ def process_query():
         logger.info(f"Received query: {query}")
         
         # TODO: Add actual query logic using rag here
-        response = {
-            "message": f"Echo: {query}",
+        # uncomment next line to run rag
+        # rag.setup_agent() # TODO: DO NOT USE THIS FUNCTION
+        # USE llama-index insert_node when upload document, load everything instead of re-init
+        # process query
+        response, sources = rag.query(query)
+
+        # Format sources information as a string
+        sources_text = ""
+        for idx, source in enumerate(sources, 1):
+            sources_text += f"\nSource {idx}:\n"
+            sources_text += f"Document: {source['metadata']['document_name']}\n"
+            sources_text += f"Text: {source['text'][:200]}...\n"
+            if source["score"] is not None:
+                sources_text += f"Score: {source['score']:.4f}\n"
+            if 'page_label' in source['metadata']:
+                sources_text += f"Page: {source['metadata']['page_label']}\n"
+
+        # Construct the message that matches frontend format
+        json_response = {
+            "message": f"Query: {query}\nResponse: {response}\n\nSources:{sources_text}",
             "status": "processed",
             "timestamp": datetime.now().isoformat()
         }
         
-        logger.info(f"Sending response: {response}")
-        return jsonify(response)
+        logger.info(f"Sending response: {json_response}")
+        return jsonify(json_response)
         
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
@@ -199,6 +221,8 @@ def process_query():
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")
+    
+    
     app.run(debug=True, host="0.0.0.0", port=5000)
     """
     # Entry point - Get API info
