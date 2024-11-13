@@ -9,6 +9,10 @@ venv/
 ENV/
 env/
 
+# Embedding
+stored_summary_embeddings/
+stored_vector_embeddings/
+
 # Python
 __pycache__/
 *.py[cod]
