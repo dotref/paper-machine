@@ -4,7 +4,8 @@ from .helpers import (
     timer,
     validate_file_type,
     load_json,
-    save_json
+    save_json,
+    get_doc_tools
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     'timer',
     'validate_file_type',
     'load_json',
-    'save_json'
+    'save_json',
+    'get_doc_tools'
 ]

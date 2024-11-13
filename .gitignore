@@ -8,6 +8,11 @@
 venv/
 ENV/
 env/
+# Embeddings
+*_embeddings/
+# files
+*.txt
+*.pdf
 
 # Python
 __pycache__/
