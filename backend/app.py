@@ -187,7 +187,6 @@ def process_query():
         # Log the received query
         logger.info(f"Received query: {query}")
         
-        # TODO: Add actual query logic using rag here
         # uncomment next line to run rag
         # rag.setup_agent() # TODO: DO NOT USE THIS FUNCTION
         # USE llama-index insert_node when upload document, load everything instead of re-init
