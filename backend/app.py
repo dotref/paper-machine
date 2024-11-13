@@ -187,8 +187,7 @@ def process_query():
         # Log the received query
         logger.info(f"Received query: {query}")
         
-        # uncomment next line to run rag
-        # rag.setup_agent() # TODO: DO NOT USE THIS FUNCTION
+        rag.setup_agent() # TODO: DO NOT USE THIS FUNCTION
         # USE llama-index insert_node when upload document, load everything instead of re-init
         # process query
         response, sources = rag.query(query)
@@ -196,17 +195,17 @@ def process_query():
         # Format sources information as a string
         sources_text = ""
         for idx, source in enumerate(sources, 1):
-            sources_text += f"\nSource {idx}:\n"
-            sources_text += f"Document: {source['metadata']['document_name']}\n"
-            sources_text += f"Text: {source['text'][:200]}...\n"
+            sources_text += f"\r\n {idx}:\r\n"
+            sources_text += f"Document: {source['metadata']['document_name']}\r\n"
+            sources_text += f"Text: {source['text'][:200]}...\r\n"
             if source["score"] is not None:
-                sources_text += f"Score: {source['score']:.4f}\n"
+                sources_text += f"Score: {source['score']:.4f}\r\n"
             if 'page_label' in source['metadata']:
-                sources_text += f"Page: {source['metadata']['page_label']}\n"
+                sources_text += f"Page: {source['metadata']['page_label']}\r\n"
 
         # Construct the message that matches frontend format
         json_response = {
-            "message": f"Query: {query}\nResponse: {response}\n\nSources:{sources_text}",
+            "message": f"Query: {query}\r\nResponse: {response}\r\nSources:{sources_text}",
             "status": "processed",
             "timestamp": datetime.now().isoformat()
         }
