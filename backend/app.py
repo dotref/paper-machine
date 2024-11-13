@@ -126,8 +126,7 @@ def upload_document():
             
             # Process the file based on its type
             if file_ext in parsers:
-                # Here you would actually process the file with your parser
-                # For now, we'll just acknowledge receipt
+                # TODO: Add actual processing logic here + database
                 logger.info(f"File saved successfully: {filename}")
                 cleaned_filename = ''.join(char for char in filename if char.isalnum() or char in '_-')
                 rag.add_document(file_path, cleaned_filename)
@@ -189,7 +188,8 @@ def process_query():
         logger.info(f"Received query: {query}")
         
         # TODO: Add actual query logic using rag here
-        rag.setup_agent() # TODO: DO NOT USE THIS FUNCTION
+        # uncomment next line to run rag
+        # rag.setup_agent() # TODO: DO NOT USE THIS FUNCTION
         # USE llama-index insert_node when upload document, load everything instead of re-init
         # process query
         response, sources = rag.query(query)
