@@ -1,7 +1,21 @@
 # paper-machine
 
-## workflow
+## Setup
 
-1. create a working branch
-2. merge back to corresponding sprint
-3. at end of sprint merge to main
+clone the repo, then follow the steps under `Frontend` and `Backend`
+
+## Frontend
+
+## Backend
+```
+cd backend
+pip install -r requirements.txt
+```
+
+```
+python app.py
+```
+
+## Data Storage
+
+Right now saved locally in `backend/data`
