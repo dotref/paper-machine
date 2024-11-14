@@ -10,7 +10,7 @@
 2. populate `./data`
 - `python3 data.py` will populate the `./data` folder with text files.
 3. run
-- make sure OpenAI API key is set: `os.environ['OPENAI_API_KEY'] = "sk-..."`
+- make sure OpenAI API key is set in `.env` file in root dir.
 - `python3 main.py` run a RAG demo. It will:
     - create an index for each document from the `./data` folder and persist it in `./storage`.
     - demonstrate query routing.
