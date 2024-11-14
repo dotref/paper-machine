@@ -1,2 +1,3 @@
-data_wiki/
+data/
 qdrant_db/
+.env

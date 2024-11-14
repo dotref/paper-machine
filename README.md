@@ -1,9 +1,7 @@
 # paper-machine
 ## rag-skeleton
-- `main.py` contains a RAG workflow that supports the following actions:
-1. adding documents to the index.
-2. removing documents from the index.
-3. using the index and a query to retrieve relevant sentences.
+- `main.py` contains functions for creating/loading/deleting individual indices for each uploaded document RAG router query engine demo.
+- creation and storage of indices is slow. The idea is that during a user session, indices will be loaded once at the beginning and stored once at the end, persisting any new document indices that were created during the user session in the storage context. OR MongoIndexStore support automatic persistence (need to setup MongoDB stuff).
 
 ## setup
 
@@ -13,9 +11,7 @@
 - `python3 data.py` will populate the `./data` folder with text files.
 3. run
 - make sure OpenAI API key is set: `os.environ['OPENAI_API_KEY'] = "sk-..."`
-- in the `test()` method, fill out the absolute filepath(s) of documents you wish to delete.
-- `python3 main.py` run an example sequence of actions. It will
-    - insert documents from the `./data` directory into the index.
-    - run a query, printing the retrieved sentences and their retrieval scores.
-    - remove the specified documents from the index.
-    - run the query again (deleting documents relevant to the query should cause retrieval scores to go down).
+- `python3 main.py` run a RAG demo. It will:
+    - create an index for each document from the `./data` folder and persist it in `./storage`.
+    - demonstrate query routing.
+    - run queries, printing the llm generated response and retrieved source nodes.
