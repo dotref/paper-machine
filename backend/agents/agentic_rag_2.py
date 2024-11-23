@@ -1,26 +1,29 @@
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any, Callable
 import os
-
 from dotenv import load_dotenv
-load_dotenv()
 
 import pyprojroot
 root_dir = pyprojroot.here()
 
-from llama_index.core import VectorStoreIndex, StorageContext, SimpleDirectoryReader
-from llama_index.core import load_index_from_storage, load_indices_from_storage
-from llama_index.core.node_parser import SentenceWindowNodeParser
+import nest_asyncio
+from llama_index.core import VectorStoreIndex, StorageContext, SimpleDirectoryReader, Settings
+from llama_index.core import load_index_from_storage
+from llama_index.core.node_parser import SentenceSplitter, SentenceWindowNodeParser
 from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.query_engine import RouterQueryEngine
 from llama_index.core.tools import QueryEngineTool
 from llama_index.core.selectors import LLMMultiSelector
-from llama_index.core.agent import FunctionCallingAgentWorker, AgentRunner
-from llama_index.core.objects import ObjectIndex
+from llama_index.core.postprocessor import MetadataReplacementPostProcessor
 
 
 class MultiDocumentRAG():
-    def __init__(self, upload_dir, persist_dir, llm="gpt-3.5-turbo"):
-        self.llm = OpenAI(model=llm)
+    def __init__(self, upload_dir, persist_dir, llm="gpt-3.5-turbo", embedding_model="text-embedding-ada-002"):
+        load_dotenv()
+        nest_asyncio.apply()
+        
+        Settings.llm = OpenAI(model=llm)
+        Settings.embed_model = OpenAIEmbedding(model=embedding_model)
 
         self.upload_dir = upload_dir
         self.persist_dir = persist_dir
@@ -32,7 +35,14 @@ class MultiDocumentRAG():
             # load existing storage context
             self.storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
         
+        def splitter() -> Callable[[str], List[str]]:
+            splitter = SentenceSplitter(chunk_size=60, chunk_overlap=13)
+            def split(text: str) -> List[str]:
+                return splitter.split_text(text)
+            return split
+
         self.node_parser = SentenceWindowNodeParser.from_defaults(
+            sentence_splitter=splitter(),
             window_size=3,
             window_metadata_key="window",
             original_text_metadata_key="original_text",
@@ -49,26 +59,20 @@ class MultiDocumentRAG():
         '''
         Setup the agent with tools from all documents.
         '''
-        obj_index = ObjectIndex.from_objects(
-            self._get_tools(),
-            index_cls=VectorStoreIndex,
-        )
-        obj_retriever = obj_index.as_retriever(similarity_top_k=3)
 
         default_prompt = """ 
         You are an agent designed to answer queries over a set of given papers.
         Please always use the tools provided to answer a question. Do not rely on prior knowledge.
         If you do not know the answer, just say "I don't know".
         """
-        
-        agent_worker = FunctionCallingAgentWorker.from_tools(
-            tool_retriever=obj_retriever,
-            llm=self.llm,
-            system_prompt=system_prompt or default_prompt,
+
+        router_query_engine = RouterQueryEngine(
+            selector=LLMMultiSelector.from_defaults(),
+            query_engine_tools=self._get_tools(),
             verbose=True
         )
 
-        self._agent = AgentRunner(agent_worker)
+        self._agent = router_query_engine
     
     def query(self, query_text: str) -> Tuple[str, List[Dict[str, Any]]]:
         """
@@ -78,7 +82,7 @@ class MultiDocumentRAG():
         if not self._agent:
             raise ValueError("Agent not set up. Call setup_agent() first")
             
-        response = self._agent.chat(query_text)
+        response = self._agent.query(query_text)
 
         return response
 
@@ -106,6 +110,7 @@ class MultiDocumentRAG():
     def delete_indices(self, files: list[str]) -> None:
         '''
         Delete index and associated nodes from storage.
+        Index has to be loaded first
         NOTE: agent tools cannot be updated after agent creation
         '''
         for file in files:
@@ -149,6 +154,7 @@ class MultiDocumentRAG():
             try:
                 index = load_index_from_storage(self.storage_context, index_id=file)
                 indicies[file] = index
+                print(f"Loaded index for {file}")
             except Exception as e:
                 print(f"Index not found for {file}: {e}")
         return indicies
@@ -160,7 +166,11 @@ class MultiDocumentRAG():
         tools = []
         for file, index in self._indices.items():
             tool = QueryEngineTool.from_defaults(
-                query_engine=index.as_query_engine(),
+                query_engine=index.as_query_engine(
+                    node_postprocessors=[
+                        MetadataReplacementPostProcessor(target_metadata_key="window")
+                    ],
+                ),
                 description=f"Useful for retrieving specific context related to {file}"
             )
             tools.append(tool)
