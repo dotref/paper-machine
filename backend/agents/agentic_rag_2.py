@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Tuple, Any, Callable
 import os
+import re
 from dotenv import load_dotenv
 
 import pyprojroot
@@ -12,9 +13,10 @@ from llama_index.core.node_parser import SentenceSplitter, SentenceWindowNodePar
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.query_engine import RouterQueryEngine
-from llama_index.core.tools import QueryEngineTool
+from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.core.selectors import LLMMultiSelector
 from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+from llama_index.agent.openai import OpenAIAgent
 
 
 class MultiDocumentRAG():
@@ -65,14 +67,12 @@ class MultiDocumentRAG():
         Please always use the tools provided to answer a question. Do not rely on prior knowledge.
         If you do not know the answer, just say "I don't know".
         """
-
-        router_query_engine = RouterQueryEngine(
-            selector=LLMMultiSelector.from_defaults(),
-            query_engine_tools=self._get_tools(),
+        self._agent = OpenAIAgent.from_tools(
+            tools=self._get_tools(),
+            system_prompt=system_prompt or default_prompt,
+            llm=Settings.llm,
             verbose=True
         )
-
-        self._agent = router_query_engine
     
     def query(self, query_text: str) -> Tuple[str, List[Dict[str, Any]]]:
         """
@@ -82,7 +82,7 @@ class MultiDocumentRAG():
         if not self._agent:
             raise ValueError("Agent not set up. Call setup_agent() first")
             
-        response = self._agent.query(query_text)
+        response = self._agent.chat(query_text)
 
         return response
 
@@ -165,13 +165,32 @@ class MultiDocumentRAG():
         '''
         tools = []
         for file, index in self._indices.items():
-            tool = QueryEngineTool.from_defaults(
-                query_engine=index.as_query_engine(
-                    node_postprocessors=[
-                        MetadataReplacementPostProcessor(target_metadata_key="window")
-                    ],
-                ),
-                description=f"Useful for retrieving specific context related to {file}"
+            query_engine = index.as_query_engine(
+                node_postprocessors=[
+                    MetadataReplacementPostProcessor(target_metadata_key="window")
+                ],
+            )
+
+            # use query engine to generate a description and title
+            name = query_engine.query("Please provide a title under 64 characters for this document.").response
+            description = query_engine.query("Please provide a short description of this document.").response
+
+            # replace characters that are not alphanumeric
+            name = re.sub(r'\W+', '_', name)
+
+            # if title is longer than 64 characters, truncate it
+            if len(name) > 64:
+                name = name[:64]
+
+            print(f"Name: {name}")
+            print(f"Description: {description}")
+
+            tool = QueryEngineTool(
+                query_engine=query_engine,
+                metadata=ToolMetadata(
+                    name=name,
+                    description=description
+                )
             )
             tools.append(tool)
         return tools
