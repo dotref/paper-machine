@@ -6,6 +6,7 @@ anyio==4.6.2.post1
 asttokens==2.4.1
 async-timeout==4.0.3
 attrs==24.2.0
+autogen==0.4.1
 beautifulsoup4==4.12.3
 blinker==1.8.2
 certifi==2024.8.30
@@ -17,10 +18,13 @@ debugpy==1.8.8
 decorator==5.1.1
 Deprecated==1.2.14
 dirtyjson==1.0.8
+diskcache==5.6.3
 distro==1.9.0
+docker==7.1.0
 exceptiongroup==1.2.2
 executing==2.1.0
 filetype==1.2.0
+FLAML==2.3.2
 Flask==3.0.3
 Flask-Cors==5.0.0
 frozenlist==1.5.0
@@ -94,6 +98,7 @@ SQLAlchemy==2.0.36
 stack-data==0.6.3
 striprtf==0.0.26
 tenacity==8.5.0
+termcolor==2.5.0
 tiktoken==0.8.0
 tornado==6.4.1
 tqdm==4.67.0
