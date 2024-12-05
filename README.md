@@ -6,6 +6,14 @@ clone the repo, then follow the steps under `Frontend` and `Backend`
 
 ## Frontend
 
+Open new terminal
+
+```
+cd frontend
+npm i
+npm run dev
+```
+
 ## Backend
 
 Open another terminal
