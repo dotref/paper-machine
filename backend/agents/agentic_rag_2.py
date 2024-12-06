@@ -18,20 +18,28 @@ from llama_index.agent.openai import OpenAIAgent
 
 class MultiDocumentRAG():
     def __init__(self, upload_dir, persist_dir, llm="gpt-3.5-turbo", embedding_model="text-embedding-ada-002"):
-        load_dotenv()
+        if not os.path.exists(upload_dir):
+            raise ValueError(f"Upload directory {upload_dir} does not exist")
         
-        Settings.llm = OpenAI(model=llm)
-        Settings.embed_model = OpenAIEmbedding(model=embedding_model)
+        if not os.path.exists(persist_dir):
+            raise ValueError(f"Persist directory {persist_dir} does not exist")
 
         self.upload_dir = upload_dir
         self.persist_dir = persist_dir
         
-        if not os.path.exists(persist_dir):
-            # create new storage context
-            self.storage_context = StorageContext.from_defaults()
+        if os.listdir(persist_dir):
+            try:
+                self.storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
+            except Exception as e:
+                raise ValueError(f"Failed to load storage context from {persist_dir}")
         else:
-            # load existing storage context
-            self.storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
+            print(f"Creating new storage context at {persist_dir}")
+            self.storage_context = StorageContext.from_defaults()
+
+        load_dotenv()
+        
+        Settings.llm = OpenAI(model=llm)
+        Settings.embed_model = OpenAIEmbedding(model=embedding_model)
         
         def splitter() -> Callable[[str], List[str]]:
             splitter = SentenceSplitter(chunk_size=64, chunk_overlap=16)
@@ -52,16 +60,19 @@ class MultiDocumentRAG():
     
     def setup_indicies(self) -> None:
         '''
-        Setup indicies for all documents in the upload directory.
+        Setup indicies for documents with existing indices in the upload directory.
         '''
         print("Setting up indicies...")
-        self._load_existing_indices()
+        files = os.listdir(self.upload_dir)
+        indices = self._load_indicies(files)
+        for file, index in indices.items():
+            self._indices[file] = index
+
 
     def setup_agent(self, system_prompt: str = None) -> None:
         '''
         Setup the agent with tools from all documents.
         '''
-
         default_prompt = """ 
         You are an agent designed to answer queries over a set of given papers.
         Please always use the tools provided to answer a question. Do not rely on prior knowledge.
@@ -74,6 +85,7 @@ class MultiDocumentRAG():
             verbose=True
         )
     
+
     def query(self, query_text: str) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Query across all documents and return response with source information.
@@ -86,6 +98,7 @@ class MultiDocumentRAG():
 
         return response
 
+
     def shutdown(self) -> None:
         '''
         Save all indices to storage
@@ -94,34 +107,46 @@ class MultiDocumentRAG():
         if self._modified:
             self.storage_context.persist(persist_dir=self.persist_dir)
 
-    def create_indices(self, files: list[str]) -> None:
+
+    def create_indices(self) -> None:
         '''
         Create indices from given files in the upload folder.
         '''
-        new_files = [file for file in files if file not in self._indices.keys()]
+        uploads = os.listdir(self.upload_dir)
+        new_files = [file for file in uploads if file not in self._indices.keys()]
         if not new_files:
             print("No new files to create indices for")
             return
+        
         reader = SimpleDirectoryReader(input_files=[os.path.join(self.upload_dir, file) for file in new_files], filename_as_id=True)
         for documents in reader.iter_data():
             file_name = documents[0].metadata['file_name']
             self._create_index(file_name, documents)
         self._modified = True
     
-    def delete_indices(self, files: list[str]) -> None:
+
+    def delete_indices(self) -> None:
         '''
         Delete index and associated nodes from storage.
         Index has to be loaded first
         NOTE: agent tools cannot be updated after agent creation
         '''
-        for file in files:
+        uploads = os.listdir(self.upload_dir)
+        files_to_delete = [file for file in self._indices.keys() if file not in uploads]
+        if not files_to_delete:
+            print("No indices to delete")
+            return
+
+        for file in files_to_delete:
             index = self._indices[file]
             for ref_doc in index.ref_doc_info.keys():
                 index.delete_ref_doc(ref_doc, delete_from_docstore=True)
             index.storage_context.index_store.delete_index_struct(file)
             del self._indices[file]
+            print(f"Deleted index for {file}")
         self._modified = True
     
+
     def _create_index(self, file: str, documents: str) -> VectorStoreIndex:
         '''
         Create index from documents.
@@ -132,25 +157,19 @@ class MultiDocumentRAG():
         self._indices[file] = index
         print(f"Created index for {file}")
         return index
-    
-    def _load_existing_indices(self) -> None:
-        '''
-        populate self._indices with EXISTING INDICES from upload directory
-        '''
-        files = os.listdir(self.upload_dir)
-        indices = self._load_indicies(files)
-        for file, index in indices.items():
-            self._indices[file] = index
-    
+
+
     def _load_indicies(self, files: list[str]) -> dict[str, VectorStoreIndex]:
         '''
         Given list of files, load correspdoning indices from storage.
         Can be used to load one or multiple indices.
         Files must be present in storage (Error handling not yet implemented).
         '''
-        if not files:
-            return {}
         indicies = {}
+
+        if not files:
+            return indicies
+        
         for file in files:
             try:
                 index = load_index_from_storage(self.storage_context, index_id=file)
@@ -173,8 +192,8 @@ class MultiDocumentRAG():
                 ],
             )
 
-            # use query engine to generate a description and title
-            name = query_engine.query("Provide a title for this document. The title must be under 40 characters. Return only the title in your response.").response
+            # use query engine to generate a name and description
+            name = query_engine.query("Provide a name for this document. The name must be under 40 characters. Return only the name in your response.").response
             description = query_engine.query("Provide a short summary as a description for this document. The description must be under 1000 characters. Return only the description in your response.").response
 
             name = "query_engine_tool_" + name
@@ -182,7 +201,7 @@ class MultiDocumentRAG():
             # replace characters that are not alphanumeric
             name = re.sub(r'\W+', '_', name)
 
-            # if title is longer than 64 characters, truncate it
+            # if name is longer than 64 characters, truncate it
             if len(name) > 64:
                 name = name[:64]
 
@@ -210,10 +229,7 @@ def main():
     rag = MultiDocumentRAG(UPLOAD_DIR, PERSIST_DIR)
 
     rag.setup_indicies()
-
-    files = os.listdir(UPLOAD_DIR)
-    rag.create_indices(files)
-
+    rag.create_indices()
     rag.setup_agent()
 
     query = ""

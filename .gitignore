@@ -8,8 +8,10 @@
 venv/
 ENV/
 env/
+
 # Embeddings
 *_embeddings/
+
 # files
 *.txt
 *.pdf
@@ -67,3 +69,5 @@ dist/
 
 # Project-specific
 # Add any project-specific files or directories to ignore
+backend/storage/*
+backend/uploads/*
