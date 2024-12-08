@@ -13,8 +13,8 @@ env/
 *_embeddings/
 
 # files
-*.txt
-*.pdf
+#*.txt
+#*.pdf
 
 # Python
 __pycache__/
