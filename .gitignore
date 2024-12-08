@@ -14,7 +14,7 @@ env/
 
 # files
 *.txt
-
+*.pdf
 
 # Python
 __pycache__/
