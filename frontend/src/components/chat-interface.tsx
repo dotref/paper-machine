@@ -8,7 +8,7 @@ interface Message {
     text: string;
     timestamp: Date;
     sender: string;
-    response?: string;  // Added to handle backend responses
+    response?: string;
 }
 
 export default function ChatInterface() {
@@ -39,35 +39,10 @@ export default function ChatInterface() {
         };
     }, []);
 
-    // Added: Function to communicate with backend
-    const queryBackend = async (userMessage: string) => {
-        try {
-            const response = await fetch('http://localhost:5000/query', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    query: userMessage
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Error:', error);
-            return { message: 'Error connecting to server' };
-        }
-    }
-
-    // Modified: handleSubmit to include backend communication
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (message.trim()) {
-            setIsLoading(true)  // Start loading
+            setIsLoading(true)
 
             // Add user message
             const userMessage: Message = {
@@ -77,20 +52,89 @@ export default function ChatInterface() {
             }
             setMessages(prev => [...prev, userMessage])
 
-            // Get response from backend
-            const response = await queryBackend(message)
-            
-            // Add system response
-            const systemMessage: Message = {
-                text: response.message || 'No response from server',
-                timestamp: new Date(),
-                sender: 'System',
-                response: response.status
-            }
-            setMessages(prev => [...prev, systemMessage])
+            try {
+                const response = await fetch('http://localhost:5000/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message })
+                });
 
-            setMessage("")
-            setIsLoading(false)  // End loading
+                if (!response.body) {
+                    throw new Error('No response body');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let currentMessage: Message | null = null;
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        console.log("Stream complete");
+                        break;
+                    }
+
+                    const decodedValue = decoder.decode(value);
+                    console.log("Received chunk:", decodedValue);
+
+                    const messages = decodedValue
+                        .split('\n')
+                        .filter(line => line.trim())
+                        .map(line => {
+                            try {
+                                return JSON.parse(line);
+                            } catch (e) {
+                                console.error('Error parsing message:', e);
+                                console.log('Problematic line:', line);
+                                return null;
+                            }
+                        })
+                        .filter(Boolean);
+
+                    console.log("Parsed messages:", messages);
+
+                    for (const msg of messages) {
+                        if (msg.is_continuation && currentMessage) {
+                            console.log("Updating existing message with:", msg.message);
+                            // Create a new message object to ensure React detects the change
+                            const updatedMessage: Message = {
+                                ...currentMessage,
+                                text: currentMessage.text + ' ' + msg.message
+                            };
+                            currentMessage = updatedMessage;
+                            setMessages(prev => prev.map(m => 
+                                m === currentMessage 
+                                    ? updatedMessage
+                                    : m
+                            ));
+                        } else {
+                            console.log("Creating new message:", msg.message);
+                            const agentMessage: Message = {
+                                text: msg.message,
+                                timestamp: new Date(msg.timestamp),
+                                sender: msg.sender,
+                                response: 'streaming'
+                            }
+                            currentMessage = agentMessage;
+                            setMessages(prev => [...prev, agentMessage]);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                const errorMessage: Message = {
+                    text: 'Error connecting to server',
+                    timestamp: new Date(),
+                    sender: 'System',
+                    response: 'error'
+                }
+                setMessages(prev => [...prev, errorMessage])
+            } finally {
+                setMessage("")
+                setIsLoading(false)
+            }
         }
     }
 
@@ -98,12 +142,23 @@ export default function ChatInterface() {
         <div className="flex flex-col h-[calc(100vh-2rem)] border rounded-lg p-4">
             <div className="flex-grow overflow-y-auto mb-4 space-y-4">
                 {messages.map((msg, index) => (
-                    <div key={index} className="bg-muted p-3 rounded-lg">
+                    <div 
+                        key={index} 
+                        className={`p-3 rounded-lg ${
+                            msg.sender === 'User' 
+                                ? 'bg-blue-100 ml-auto' 
+                                : 'bg-gray-100'
+                        } max-w-[80%] ${
+                            msg.sender === 'User' 
+                                ? 'ml-auto' 
+                                : 'mr-auto'
+                        }`}
+                    >
                         <div className="text-sm text-muted-foreground flex justify-between">
                             <span>{msg.sender}</span>
                             <span>{msg.timestamp.toLocaleTimeString()}</span>
                         </div>
-                        <div>{msg.text}</div>
+                        <div className="mt-1">{msg.text}</div>
                     </div>
                 ))}
             </div>
@@ -113,8 +168,11 @@ export default function ChatInterface() {
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder="Type your message..."
                     className="flex-grow"
+                    disabled={isLoading}
                 />
-                <Button type="submit">Send</Button>
+                <Button type="submit" disabled={isLoading}>
+                    {isLoading ? 'Sending...' : 'Send'}
+                </Button>
             </form>
         </div>
     )

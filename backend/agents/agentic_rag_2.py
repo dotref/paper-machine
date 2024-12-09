@@ -1,7 +1,10 @@
-from typing import List, Dict, Optional, Tuple, Any, Callable
+from typing import List, Dict, Optional, Tuple, Any, Callable, Union
 import os
 import re
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 import pyprojroot
 root_dir = pyprojroot.here()
@@ -14,6 +17,8 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.core.postprocessor import MetadataReplacementPostProcessor, SentenceTransformerRerank
 from llama_index.agent.openai import OpenAIAgent
+
+from autogen import ConversableAgent, UserProxyAgent, Agent, GroupChat, GroupChatManager
 
 
 class MultiDocumentRAG():
@@ -56,6 +61,7 @@ class MultiDocumentRAG():
 
         self._indices = {}
         self._agent = None
+        self._tools = {}
         self._modified = False
     
     def setup_indicies(self) -> None:
@@ -103,8 +109,8 @@ class MultiDocumentRAG():
         '''
         Save all indices to storage
         '''
-        print("Saving indices to storage...")
         if self._modified:
+            print("Saving indices to storage...")
             self.storage_context.persist(persist_dir=self.persist_dir)
 
 
@@ -129,7 +135,7 @@ class MultiDocumentRAG():
         '''
         Delete index and associated nodes from storage.
         Index has to be loaded first
-        NOTE: agent tools cannot be updated after agent creation
+        NOTE: agent tools cannot be updated after agent creation, you must call setup_agent again
         '''
         uploads = os.listdir(self.upload_dir)
         files_to_delete = [file for file in self._indices.keys() if file not in uploads]
@@ -143,6 +149,10 @@ class MultiDocumentRAG():
                 index.delete_ref_doc(ref_doc, delete_from_docstore=True)
             index.storage_context.index_store.delete_index_struct(file)
             del self._indices[file]
+
+            if file in self._tools:
+                del self._tools[file]
+
             print(f"Deleted index for {file}")
         self._modified = True
     
@@ -179,12 +189,18 @@ class MultiDocumentRAG():
                 print(f"Index not found for {file}: {e}")
         return indicies
 
+
     def _get_tools(self) -> list[QueryEngineTool]:
         '''
         Get tools from all indices
         '''
         tools = []
         for file, index in self._indices.items():
+
+            if file in self._tools:
+                tools.append(self._tools[file])
+                continue
+
             query_engine = index.as_query_engine(
                 node_postprocessors=[
                     MetadataReplacementPostProcessor(target_metadata_key="window"),
@@ -219,44 +235,233 @@ class MultiDocumentRAG():
                     description=description
                 )
             )
+
+            self._tools[file] = tool
+
             tools.append(tool)
         return tools
     
-def main():
-    UPLOAD_DIR = os.path.join(root_dir, "backend/uploads")
-    PERSIST_DIR = os.path.join(root_dir, "backend/storage")
 
-    rag = MultiDocumentRAG(UPLOAD_DIR, PERSIST_DIR)
+class AgentChat:
+    def __init__(self, multi_document_rag: MultiDocumentRAG) -> None:
+        logger.info("Initializing AgentChat")
+        load_dotenv()
+        self.llm_config = {"config_list": [{"model": 'gpt-4', "api_key": os.environ["OPENAI_API_KEY"]}]}
+        self.message_queue = None
+        self.rag = multi_document_rag
 
-    rag.setup_indicies()
-    rag.create_indices()
-    rag.setup_agent()
+        # Create agents
+        self.human_proxy = self._create_user_proxy_agent()
+        self.query_analyzer = self._create_query_analyzer_agent()
+        self.rag_agent = self._create_rag_agent()
+        self.enhancement_agent = self._create_enhancement_agent()
 
-    query = ""
-    while query != "exit":
-        try:
-            query = input("Enter query (or 'exit' to quit): ")
-            if query == "exit":
-                break
-                
-            response = rag.query(query)
-            print("\nResponse:", response)
+    def _send_message(self, sender: str, content: str) -> None:
+        """Helper method to send messages to the queue"""
+        logger.info(f"Sending message from {sender}: {content}")
+        if self.message_queue:
+            self.message_queue.put({
+                "sender": sender,
+                "content": content
+            })
+        else:
+            logger.warning("Message queue not set!")
+
+    def _create_user_proxy_agent(self) -> ConversableAgent:
+        """Creates the human proxy agent to represent the user in the chat"""
+        user_proxy = UserProxyAgent(
+            name="user_proxy",
+            code_execution_config={"use_docker": False}
+        )
+
+        # No message handler needed
+
+        return user_proxy
+
+
+    def _create_query_analyzer_agent(self) -> ConversableAgent:
+        """Creates the query analysis agent"""
+        system_message = """You analyze car repair queries to ensure they contain all required information.
+        Required information:
+        1. Car brand and model
+        2. Year of manufacture
+        3. Specific part or system involved
+        4. Nature of the problem or maintenance task
+
+        If any information is missing, ask ONE question at a time to get it.
+        If all information is present, create a SUMMARY in this format:
+
+        SUMMARY:
+        Vehicle: [Year] [Brand] [Model]
+        Part/System: [Specific part]
+        Task: [Detailed description of the problem/task]
+        Additional Notes: [Any relevant details provided by user]
+
+        Return ONLY the question if information is missing, or ONLY the SUMMARY if all information is present."""
+
+        agent = ConversableAgent(
+            name="query_analyzer",
+            system_message=system_message,
+            llm_config=self.llm_config
+        )
+        
+        async def reply_func(
+            recipient: ConversableAgent,
+            messages: Optional[List[Dict]] = None,
+            sender: Optional[Agent] = None,
+            config: Optional[Any] = None,
+        ) -> Tuple[bool, Union[str, Dict, None]]:
+            logger.info(f"Query analyzer received message: {messages}")
+            flag, response = await self.query_analyzer.a_generate_oai_reply(messages)
+            logger.info(f"Query analyzer response: {response}")
+            self._send_message("Query Analyzer", response)
+            return flag, response
+
+        agent.register_reply(
+            trigger=lambda sender: True,
+            reply_func=reply_func
+        )
+        
+        return agent
+
+    def _create_rag_agent(self) -> ConversableAgent:
+        """Creates the RAG agent"""
+        system_message = """You handle knowledge base queries for car repair information.
+        When you receive a SUMMARY:
+        1. Use the query_knowledge_base function with the SUMMARY
+        2. Share the retrieved instructions
+
+        Do NOT make up information or rely on general knowledge."""
+
+        agent = ConversableAgent(
+            name="rag_agent",
+            system_message=system_message,
+            llm_config=self.llm_config
+        )
+
+        def query_knowledge_base(query: str) -> str:
+            logger.info(f"Querying knowledge base: {query}")
+            try:
+                response = self.rag.query(query).response
+                logger.info(f"Knowledge base response: {response}")
+                return response
+            except Exception as e:
+                logger.error(f"Error querying knowledge base: {str(e)}", exc_info=True)
+                return f"Error querying knowledge base: {str(e)}"
+
+        # Register RAG function
+        # agent.register_for_llm(description="Queries the car repair knowledge base")(query_knowledge_base)
+        # agent.register_for_execution()(query_knowledge_base)
+
+        async def reply_func(
+            recipient: ConversableAgent,
+            messages: Optional[List[Dict]] = None,
+            sender: Optional[Agent] = None,
+            config: Optional[Any] = None,
+        ) -> Tuple[bool, Union[str, Dict, None]]:
+            logger.info(f"RAG agent received message: {messages}")
+            last_message = messages[-1].get("content")
+            response = query_knowledge_base(last_message)
+            logger.info(f"RAG agent response: {response}")
+            self._send_message("RAG Agent", response)
+            return True, response
+
+        agent.register_reply(
+            trigger=lambda sender: True,
+            reply_func=reply_func
+        )
+
+        return agent
+
+    def _create_enhancement_agent(self) -> ConversableAgent:
+        """Creates the enhancement agent"""
+        system_message = """You enhance repair instructions by:
+        1. Identifying technical terms and jargon
+        2. Adding clear explanations
+        3. Formatting for readability
+
+        Always structure your response as:
+
+        REPAIR INSTRUCTIONS:
+        [Enhanced instructions with better formatting]
+
+        TECHNICAL TERMS EXPLAINED:
+        - Term 1: Simple explanation
+        - Term 2: Simple explanation with analogy
+
+        SAFETY NOTES:
+        [Any relevant safety information]"""
+
+        agent = ConversableAgent(
+            name="enhancement_agent",
+            system_message=system_message,
+            llm_config=self.llm_config
+        )
+
+        async def reply_func(
+            recipient: ConversableAgent,
+            messages: Optional[List[Dict]] = None,
+            sender: Optional[Agent] = None,
+            config: Optional[Any] = None,
+        ) -> Tuple[bool, Union[str, Dict, None]]:
+            logger.info(f"Enhancement agent received message: {messages}")
+            flag, response = await self.enhancement_agent.a_generate_oai_reply(messages)
+            logger.info(f"Enhancement agent response: {response}")
+            self._send_message("Enhancement Agent", response)
+            return flag, response
+
+        agent.register_reply(
+            trigger=lambda sender: True,
+            reply_func=reply_func
+        )
+
+        return agent
+
+    def _is_summary(self, message: str) -> bool:
+        """Check if a message contains a complete SUMMARY block"""
+        return message.strip().startswith("SUMMARY:") and all(
+            field in message for field in ["Vehicle:", "Part/System:", "Task:"]
+        )
+
+    async def process_message(self, message: str) -> None:
+        """Main method to process user messages"""
+        logger.info("Processing message")
+        
+        # Step 1: Query Analysis
+        query_analyzer_response = await self.human_proxy.a_initiate_chat(
+            self.query_analyzer,
+            message=message,
+            clear_history=False,
+            max_turns=1
+        )
+        
+        logger.info(f"Query analyzer response: {query_analyzer_response}")
+        query_analyzer_message = query_analyzer_response.summary
+
+        # If response is a question (no SUMMARY found), end conversation
+        if not self._is_summary(query_analyzer_message):
+            return
             
-            print("\nSources:")
-            for idx, source in enumerate(response.source_nodes):
-                print(f"\nSource {idx}:")
-                print(f"Document: {source.node.node_id}")
-                print(f"Text: {source.metadata['original_text']}")
-                if source.score is not None:
-                    print(f"Score: {source.score:.4f}")
-                if source.node.metadata.get('page_label') is not None:
-                    print(f"Page: {source.node.metadata['page_label']}")
-            print("\n" + "="*50)
-        except Exception as e:
-            print(f"Error: {e}")
-    
-    rag.shutdown()
-    print("Goodbye!")
+        # Step 2: RAG Query
+        rag_response = await self.human_proxy.a_initiate_chat(
+            self.rag_agent,
+            message=query_analyzer_message,
+            max_turns=1
+        )
 
-if __name__ == "__main__":
-    main()
+        logger.info(f"RAG agent response: {rag_response}")
+        rag_response_message = rag_response.summary
+        
+        # Step 3: Enhancement
+        await self.human_proxy.a_initiate_chat(
+            self.enhancement_agent,
+            message=rag_response_message,
+            max_turns=1
+        )
+        
+        logger.info("Message processing complete")
+
+    def set_message_queue(self, queue):
+        """Set the message queue for this chat session"""
+        logger.info("Setting message queue")
+        self.message_queue = queue
