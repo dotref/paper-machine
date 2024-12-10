@@ -158,7 +158,7 @@ export default function ChatInterface() {
                             <span>{msg.sender}</span>
                             <span>{msg.timestamp.toLocaleTimeString()}</span>
                         </div>
-                        <div className="mt-1">{msg.text}</div>
+                        <div className="mt-1 whitespace-pre-wrap">{msg.text}</div>
                     </div>
                 ))}
             </div>

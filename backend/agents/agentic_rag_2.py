@@ -342,9 +342,24 @@ class AgentChat:
         def query_knowledge_base(query: str) -> str:
             logger.info(f"Querying knowledge base: {query}")
             try:
-                response = self.rag.query(query).response
-                logger.info(f"Knowledge base response: {response}")
-                return response
+                response = self.rag.query(query)
+                
+                # Format the response with sources
+                formatted_response = "RESPONSE:\n" + response.response + "\n\nSOURCE INFORMATION:\n"
+                
+                for idx, source in enumerate(response.source_nodes, 1):
+                    formatted_response += f"\nSource {idx}:\n"
+                    formatted_response += f"Document: {source.node.node_id}\n"
+                    formatted_response += f"Context Window: {source.metadata['window']}\n"
+                    if source.score is not None:
+                        formatted_response += f"Relevance Score: {source.score:.4f}\n"
+                    if source.node.metadata.get('page_label'):
+                        formatted_response += f"Page: {source.node.metadata['page_label']}\n"
+                    formatted_response += "-" * 40 + "\n"
+                
+                logger.info(f"Knowledge base response with sources: {formatted_response}")
+                return formatted_response
+                
             except Exception as e:
                 logger.error(f"Error querying knowledge base: {str(e)}", exc_info=True)
                 return f"Error querying knowledge base: {str(e)}"
