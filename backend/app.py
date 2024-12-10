@@ -1,13 +1,22 @@
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, stream_with_context, Response
 from typing import Dict, Any
 import asyncio
 from pathlib import Path
 from flask_cors import CORS
 import os
+import queue
+import threading
+import json
+import atexit
+
+import pyprojroot
+root_dir = pyprojroot.here()
 
 # Import configurations
-from agents.agentic_rag import MultiDocumentRAG
+# from agents.agentic_rag import MultiDocumentRAG
+from agents.agentic_rag_2 import MultiDocumentRAG as MultiDocumentRAG2
+from agents.agentic_rag_2 import AgentChat
 from config import config
 
 # Import utilities
@@ -19,11 +28,12 @@ from data_loader.parsers.parsers import PDFParser, TextParser, ImageParser
 from werkzeug.utils import secure_filename
 
 # Add these configurations after creating the Flask app
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = 'backend/uploads'
+PERSIST_DIR = 'backend/storage'
 ALLOWED_EXTENSIONS = {'pdf', 'txt'}
 
 # Create uploads directory if it doesn't exist
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(os.path.join(root_dir, UPLOAD_FOLDER), exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -34,7 +44,8 @@ setup_logging(log_level="DEBUG", log_file="app.log")
 logger = get_logger(__name__)
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['UPLOAD_FOLDER'] = os.path.join(root_dir, UPLOAD_FOLDER)  # Set the UPLOAD_FOLDER
+app.config['PERSIST_DIR'] = os.path.join(root_dir, PERSIST_DIR)  # Set the PERSIST_DIR
 
 CORS(app, resources={
     r"/*": {
@@ -45,8 +56,11 @@ CORS(app, resources={
     }
 })
 
-rag = MultiDocumentRAG()
-
+# rag = MultiDocumentRAG()
+rag2 = MultiDocumentRAG2(app.config['UPLOAD_FOLDER'], app.config['PERSIST_DIR'])
+rag2.setup_indicies()
+rag2.setup_agent()
+atexit.register(rag2.shutdown)
 
 # Initialize parsers
 parsers = {
@@ -128,8 +142,10 @@ def upload_document():
             if file_ext in parsers:
                 # TODO: Add actual processing logic here + database
                 logger.info(f"File saved successfully: {filename}")
-                cleaned_filename = ''.join(char for char in filename if char.isalnum() or char in '_-')
-                rag.add_document(file_path, cleaned_filename)
+                rag2.create_indices()
+                rag2.setup_agent()
+                logger.info(f"Indices created successfully")
+
                 return jsonify({
                     "message": f"File uploaded successfully",
                     "filename": filename,
@@ -137,6 +153,7 @@ def upload_document():
                     "file_type": file_ext[1:].upper()  # Remove the dot and capitalize
                 })
             else:
+                logger.info(f"Unsupported file type: {file_ext}")
                 os.remove(file_path)  # Remove unsupported file
                 return jsonify({
                     "message": "Unsupported file type",
@@ -156,66 +173,125 @@ def upload_document():
         "status": "error"
     }), 400
 
+# Global chat sessions dictionary to store AgentChat instances
+chat_sessions = {}
 
-# Query Endpoint
-@app.route("/query", methods=["POST"])
-@timer
-def process_query():
+@app.route("/chat", methods=["POST"])
+def chat():
     """
-    Query endpoint provides RAG-based answers:
-    - Retrieves relevant context
-    - Generates new response
-    - Question answering focus
-    
-    Example request:
-    {
-        "query": "what are the key findings in recent ML papers?",
-        "response_format": "detailed"
-    }
+    Endpoint that processes messages through AgentChat and streams responses
     """
-    logger.info("Query endpoint triggered")
+    data = request.get_json()
+    if not data or 'message' not in data:
+        return jsonify({"error": "No message provided"}), 400
+
+    session_id = request.headers.get('X-Session-ID', 'default')
     
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
+    # Create new chat session if it doesn't exist
+    if session_id not in chat_sessions:
+        logger.info(f"Creating new chat session for ID: {session_id}")
+        chat_sessions[session_id] = AgentChat(rag2)
+    else:
+        logger.info(f"Using existing chat session for ID: {session_id}")
+    
+    agent_chat = chat_sessions[session_id]
+    message_queue = queue.Queue()
+    agent_chat.set_message_queue(message_queue)
+
+    def generate_stream():
+        # Start processing in a separate thread
+        def process_message():
+            asyncio.run(agent_chat.process_message(data['message']))
+            # Add None to queue to signal completion
+            message_queue.put(None)
             
-        query = data.get('query', '')
-        if not query:
-            return jsonify({"error": "No query provided"}), 400
-            
-        # Log the received query
-        logger.info(f"Received query: {query}")
+        thread = threading.Thread(target=process_message)
+        thread.start()
         
-        rag.setup_agent() # TODO: DO NOT USE THIS FUNCTION
-        # USE llama-index insert_node when upload document, load everything instead of re-init
-        # process query
-        response, sources = rag.query(query)
+        timestamp = datetime.now().isoformat()
+        
+        while True:
+            # TODO: Implement streaming, can view commented code at end of file for dummy streaming example
+            try:
+                msg = message_queue.get()
+                if msg is None:  # End of processing
+                    break
+                    
+                message_data = {
+                    "sender": msg["sender"],
+                    "message": msg["content"],
+                    "timestamp": timestamp,
+                    "is_continuation": False
+                }
+                
+                yield json.dumps(message_data) + "\n\n"
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Error in stream generation: {e}")
+                break
 
-        # Format sources information as a string
-        sources_text = ""
-        for idx, source in enumerate(sources, 1):
-            sources_text += f"\r\n {idx}:\r\n"
-            sources_text += f"Document: {source['metadata']['document_name']}\r\n"
-            sources_text += f"Text: {source['text'][:200]}...\r\n"
-            if source["score"] is not None:
-                sources_text += f"Score: {source['score']:.4f}\r\n"
-            if 'page_label' in source['metadata']:
-                sources_text += f"Page: {source['metadata']['page_label']}\r\n"
-
-        # Construct the message that matches frontend format
-        json_response = {
-            "message": f"Query: {query}\r\nResponse: {response}\r\nSources:{sources_text}",
-            "status": "processed",
-            "timestamp": datetime.now().isoformat()
+    return Response(
+        stream_with_context(generate_stream()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
         }
+    )
+
+# # Global message queue for each chat session
+# chat_queues = {}
+
+# @app.route("/chat", methods=["POST"])
+# def chat():
+#     """
+#     Test endpoint that streams tokens one by one to build a sentence
+#     """
+#     def generate_test_stream():
+#         import time
         
-        logger.info(f"Sending response: {json_response}")
-        return jsonify(json_response)
+#         # The sentence we'll stream token by token
+#         sentence = "Hello! This is a test message being streamed one word at a time."
+#         tokens = sentence.split()
         
-    except Exception as e:
-        logger.error(f"Error processing query: {str(e)}")
-        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+#         # Initialize the first message
+#         message_data = {
+#             "sender": "TestBot",
+#             "message": tokens[0],
+#             "timestamp": datetime.now().isoformat()
+#         }
+#         yield json.dumps(message_data) + "\n\n"  # Add extra newline for proper flushing
+        
+#         # Stream subsequent tokens as updates to the same message
+#         for token in tokens[1:]:
+#             time.sleep(1)  # Wait 1 second between tokens
+#             message_data = {
+#                 "sender": "TestBot",
+#                 "message": token,
+#                 "timestamp": message_data["timestamp"],  # Keep same timestamp for continuation
+#                 "is_continuation": True  # Flag to indicate this is part of the same message
+#             }
+#             yield json.dumps(message_data) + "\n\n"  # Add extra newline for proper flushing
+
+#     return Response(
+#         stream_with_context(generate_test_stream()),
+#         mimetype='text/event-stream',
+#         headers={
+#             'Cache-Control': 'no-cache',
+#             'Connection': 'keep-alive',
+#             'X-Accel-Buffering': 'no'  # Disable nginx buffering if using nginx
+#         }
+#     )
+
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    logger.info("Shutting down Flask application...")
+    rag2.shutdown()
+
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")
