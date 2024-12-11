@@ -15,8 +15,7 @@ root_dir = pyprojroot.here()
 
 # Import configurations
 # from agents.agentic_rag import MultiDocumentRAG
-from agents.agentic_rag_2 import MultiDocumentRAG as MultiDocumentRAG2
-from agents.agentic_rag_2 import AgentChat
+from agents.agentic_rag import MultiDocumentRetrieval, AgentChat
 from config import config
 
 # Import utilities
@@ -56,11 +55,10 @@ CORS(app, resources={
     }
 })
 
-# rag = MultiDocumentRAG()
-rag2 = MultiDocumentRAG2(app.config['UPLOAD_FOLDER'], app.config['PERSIST_DIR'])
-rag2.setup_indicies()
-rag2.setup_agent()
-atexit.register(rag2.shutdown)
+knowledge_base = MultiDocumentRetrieval(app.config['UPLOAD_FOLDER'], app.config['PERSIST_DIR'])
+knowledge_base.setup_indicies()
+knowledge_base.setup_retriever()
+atexit.register(knowledge_base.shutdown)
 
 # Initialize parsers
 parsers = {
@@ -142,8 +140,8 @@ def upload_document():
             if file_ext in parsers:
                 # TODO: Add actual processing logic here + database
                 logger.info(f"File saved successfully: {filename}")
-                rag2.create_indices()
-                rag2.setup_agent()
+                knowledge_base.create_indices()
+                knowledge_base.setup_retriever()
                 logger.info(f"Indices created successfully")
 
                 return jsonify({
@@ -190,7 +188,7 @@ def chat():
     # Create new chat session if it doesn't exist
     if session_id not in chat_sessions:
         logger.info(f"Creating new chat session for ID: {session_id}")
-        chat_sessions[session_id] = AgentChat(rag2)
+        chat_sessions[session_id] = AgentChat(knowledge_base)
     else:
         logger.info(f"Using existing chat session for ID: {session_id}")
     
@@ -290,7 +288,7 @@ def chat():
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     logger.info("Shutting down Flask application...")
-    rag2.shutdown()
+    knowledge_base.shutdown()
 
 
 if __name__ == "__main__":
