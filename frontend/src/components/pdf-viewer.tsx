@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from "@/components/ui/button"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 interface UploadStatus {
     filename: string;
@@ -10,9 +10,70 @@ interface UploadStatus {
 }
 
 export default function PdfViewer() {
-    const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+    const [fileUrl, setFileUrl] = useState<string | null>(null)
     const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null)
     const [isUploading, setIsUploading] = useState(false)
+    const [fileType, setFileType] = useState<'pdf' | 'txt' | null>(null)
+
+    // Function to determine file type
+    const getFileType = (filename: string): 'pdf' | 'txt' | null => {
+        const extension = filename.split('.').pop()?.toLowerCase();
+        if (extension === 'pdf') return 'pdf';
+        if (extension === 'txt') return 'txt';
+        return null;
+    }
+
+    // Function to create PDF viewer URL with page number
+    const createPdfViewerUrl = (url: string, pageLabel: string) => {
+        // For PDF files, add the page parameter
+        return `${url}#page=${parseInt(pageLabel) + 1}`; // Add 1 because PDF viewers use 1-based page numbers
+    }
+
+    useEffect(() => {
+        const handleDisplayFile = async (event: CustomEvent) => {
+            const { filename, pageLabel } = event.detail;
+            try {
+                const response = await fetch(`http://localhost:5000/uploads/${filename}`);
+                if (!response.ok) throw new Error('Failed to fetch file');
+                
+                const blob = await response.blob();
+                const type = getFileType(filename);
+                setFileType(type);
+                
+                let url = URL.createObjectURL(blob);
+                
+                // For PDFs, add the page parameter
+                if (type === 'pdf') {
+                    url = createPdfViewerUrl(url, pageLabel);
+                }
+                
+                setFileUrl(url);
+                
+                setUploadStatus({
+                    filename: filename,
+                    status: 'processed',
+                    message: `Now viewing ${filename}${type === 'pdf' ? ` (page ${parseInt(pageLabel) + 1})` : ''}`
+                });
+            } catch (error) {
+                console.error('Error displaying file:', error);
+                setUploadStatus({
+                    filename: filename,
+                    status: 'error',
+                    message: 'Error displaying file'
+                });
+            }
+        };
+
+        window.addEventListener('displayFile', handleDisplayFile as EventListener);
+        
+        return () => {
+            window.removeEventListener('displayFile', handleDisplayFile as EventListener);
+            // Cleanup URLs
+            if (fileUrl) {
+                URL.revokeObjectURL(fileUrl.split('#')[0]); // Remove page parameter before revoking
+            }
+        };
+    }, []);
 
     const uploadToServer = async (file: File) => {
         setIsUploading(true)
@@ -29,11 +90,10 @@ export default function PdfViewer() {
             setUploadStatus(data)
 
             if (response.ok) {
-                // Create local URL for PDF preview
                 const url = URL.createObjectURL(file)
-                setPdfUrl(url)
+                setFileUrl(url)
+                setFileType(getFileType(file.name))
                 
-                // Notify chat interface of successful upload (you can customize this message)
                 const uploadEvent = new CustomEvent('fileUploaded', {
                     detail: {
                         filename: file.name,
@@ -43,7 +103,6 @@ export default function PdfViewer() {
                 })
                 window.dispatchEvent(uploadEvent)
             } else {
-                // Notify chat interface of failed upload
                 const uploadEvent = new CustomEvent('fileUploaded', {
                     detail: {
                         filename: file.name,
@@ -61,7 +120,6 @@ export default function PdfViewer() {
                 message: 'Upload failed'
             })
             
-            // Notify chat interface of error
             const uploadEvent = new CustomEvent('fileUploaded', {
                 detail: {
                     filename: file.name,
@@ -117,12 +175,20 @@ export default function PdfViewer() {
             )}
 
             <div className="flex-grow overflow-auto">
-                {pdfUrl && (
-                    <iframe
-                        src={pdfUrl}
-                        className="w-full h-full border-none"
-                        title="PDF Viewer"
-                    />
+                {fileUrl && (
+                    fileType === 'txt' ? (
+                        <iframe
+                            src={fileUrl}
+                            className="w-full h-full border-none bg-white"
+                            title="Text Viewer"
+                        />
+                    ) : (
+                        <iframe
+                            src={fileUrl}
+                            className="w-full h-full border-none"
+                            title="PDF Viewer"
+                        />
+                    )
                 )}
             </div>
         </div>

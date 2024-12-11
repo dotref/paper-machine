@@ -12,6 +12,7 @@ root_dir = pyprojroot.here()
 from llama_index.core import VectorStoreIndex, StorageContext, SimpleDirectoryReader, Settings
 from llama_index.core import load_index_from_storage
 from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.schema import NodeWithScore
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.retrievers import QueryFusionRetriever
@@ -112,7 +113,7 @@ class MultiDocumentRetrieval():
             print("No new files to create indices for")
             return
         
-        reader = SimpleDirectoryReader(input_files=[os.path.join(self.upload_dir, file) for file in new_files], filename_as_id=True)
+        reader = SimpleDirectoryReader(input_files=[os.path.join(self.upload_dir, file) for file in new_files])
         for documents in reader.iter_data():
             file_name = documents[0].metadata['file_name']
             self._create_index(file_name, documents)
@@ -217,13 +218,14 @@ class AgentChat:
         self.rag_agent = self._create_rag_agent()
         self.enhancement_agent = self._create_enhancement_agent()
 
-    def _send_message(self, sender: str, content: str) -> None:
+    def _send_message(self, sender: str, content: str, sources: list[dict] = []) -> None:
         """Helper method to send messages to the queue"""
         logger.info(f"Sending message from {sender}: {content}")
         if self.message_queue:
             self.message_queue.put({
                 "sender": sender,
-                "content": content
+                "content": content,
+                "sources": sources
             })
         else:
             logger.warning("Message queue not set!")
@@ -244,16 +246,13 @@ class AgentChat:
         """Creates the query analysis agent"""
         system_message = """You analyze car repair queries to ensure they contain all required information.
         Required information:
-        1. Car brand and model
-        2. Year of manufacture
-        3. Specific part or system involved
-        4. Nature of the problem or maintenance task
+        1. Specific part or system involved
+        2. Nature of the problem or maintenance task
 
         If any information is missing, ask ONE question at a time to get it.
         If all information is present, create a SUMMARY in this format:
 
         SUMMARY:
-        Vehicle: [Year] [Brand] [Model]
         Part/System: [Specific part]
         Task: [Detailed description of the problem/task]
         Additional Notes: [Any relevant details provided by user]
@@ -288,8 +287,7 @@ class AgentChat:
     def _create_rag_agent(self) -> ConversableAgent:
         """Creates the RAG agent"""
         system_message = """You handle knowledge base queries for car repair information.
-        When you receive a SUMMARY:
-        1. Use the retrieved sources to generate repair instructions for the user's issue
+        When you receive a SUMMARY, use the retrieved sources to generate repair instructions for the user's issue
 
         Always structure your response as:
 
@@ -304,21 +302,11 @@ class AgentChat:
             llm_config=self.llm_config
         )
 
-        async def query_knowledge_base(query: str) -> str:
+        async def query_knowledge_base(query: str) -> list[NodeWithScore]:
             logger.info(f"Querying knowledge base: {query}")
             try:
                 nodes_with_scores = await self.knowledge_base.retrieve(query)
-
-                response = "SOURCES:\n"
-                for node in nodes_with_scores:
-                    # Document id and node.text
-                    response += f"Document: {node.node.node_id}\n"
-                    response += f"Relevance Score: {node.score:.4f}\n"
-                    response += f"Page: {node.node.metadata['page_label']}\n"
-                    response += f"Text: {node.node.text}\n"
-                    response += "-" * 40 + "\n"
-                
-                return response
+                return nodes_with_scores
                 
             except Exception as e:
                 logger.error(f"Error querying knowledge base: {str(e)}", exc_info=True)
@@ -332,7 +320,23 @@ class AgentChat:
         ) -> Tuple[bool, Union[str, Dict, None]]:
             logger.info(f"RAG agent received message: {messages}")
             last_message = messages[-1].get("content")
-            results = await query_knowledge_base(last_message)
+            nodes_with_scores = await query_knowledge_base(last_message)
+
+            results = "SOURCES:\n"
+            sources = []
+            for node_with_score in nodes_with_scores:
+                # Document id and node.text
+                results += f"Document: {node_with_score.node.node_id}\n"
+                results += f"Relevance Score: {node_with_score.score:.4f}\n"
+                results += f"Page: {node_with_score.node.metadata['page_label']}\n"
+                results += f"Text: {node_with_score.node.text}\n"
+                results += "-" * 40 + "\n"
+
+                sources.append({
+                    "file_name": node_with_score.node.metadata['file_name'],
+                    "page_label": node_with_score.node.metadata['page_label'],
+                    "text": node_with_score.node.text
+                })
 
             # append results to last message
             messages[-1]["content"] += "\n" + results
@@ -341,7 +345,7 @@ class AgentChat:
             flag, response = await self.rag_agent.a_generate_oai_reply(messages)
 
             logger.info(f"RAG agent response: {response}")
-            self._send_message("RAG Agent", response)
+            self._send_message("RAG Agent", response, sources)
             return flag, response
 
         agent.register_reply(
@@ -358,6 +362,7 @@ class AgentChat:
         2. Adding clear explanations
         3. Formatting for readability
 
+        When you receive REPAIR INSTRUCTIONS, identify the technical terms and jargon and explain them in a simple way.
         Always structure your response as:
 
         TECHNICAL TERMS EXPLAINED:
@@ -395,7 +400,7 @@ class AgentChat:
     def _is_summary(self, message: str) -> bool:
         """Check if a message contains a complete SUMMARY block"""
         return message.strip().startswith("SUMMARY:") and all(
-            field in message for field in ["Vehicle:", "Part/System:", "Task:"]
+            field in message for field in ["Part/System:", "Task:"]
         )
 
     async def process_message(self, message: str) -> None:

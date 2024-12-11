@@ -1,5 +1,5 @@
 from datetime import datetime
-from flask import Flask, request, jsonify, stream_with_context, Response
+from flask import Flask, request, jsonify, stream_with_context, Response, send_from_directory
 from typing import Dict, Any
 import asyncio
 from pathlib import Path
@@ -219,7 +219,8 @@ def chat():
                     "sender": msg["sender"],
                     "message": msg["content"],
                     "timestamp": timestamp,
-                    "is_continuation": False
+                    "is_continuation": False,
+                    "sources": msg.get("sources", [])
                 }
                 
                 yield json.dumps(message_data) + "\n\n"
@@ -289,6 +290,12 @@ def chat():
 def shutdown_session(exception=None):
     logger.info("Shutting down Flask application...")
     knowledge_base.shutdown()
+
+# Add this new route to serve files from the upload folder
+@app.route("/uploads/<filename>")
+def serve_file(filename):
+    """Serve uploaded files."""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 if __name__ == "__main__":

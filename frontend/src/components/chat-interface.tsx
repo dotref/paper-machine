@@ -4,12 +4,30 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
 
+interface Source {
+    file_name: string;
+    page_label: string;
+    text: string;
+}
+
 interface Message {
     text: string;
     timestamp: Date;
     sender: string;
     response?: string;
+    sources?: Source[];
 }
+
+// Helper function to filter unique sources
+const getUniqueSources = (sources: Source[]): Source[] => {
+    const seen = new Set<string>();
+    return sources.filter(source => {
+        const key = `${source.file_name}-${source.page_label}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
 
 export default function ChatInterface() {
     const [message, setMessage] = useState("")
@@ -115,7 +133,8 @@ export default function ChatInterface() {
                                 text: msg.message,
                                 timestamp: new Date(msg.timestamp),
                                 sender: msg.sender,
-                                response: 'streaming'
+                                response: 'streaming',
+                                sources: msg.sources
                             }
                             currentMessage = agentMessage;
                             setMessages(prev => [...prev, agentMessage]);
@@ -159,6 +178,32 @@ export default function ChatInterface() {
                             <span>{msg.timestamp.toLocaleTimeString()}</span>
                         </div>
                         <div className="mt-1 whitespace-pre-wrap">{msg.text}</div>
+                        {msg.sources && msg.sources.length > 0 && (
+                            <div className="mt-2">
+                                <div className="text-sm text-gray-600 mb-2">Sources:</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {getUniqueSources(msg.sources).map((source, idx) => (
+                                        <Button
+                                            key={idx}
+                                            variant="outline"
+                                            size="sm"
+                                            title={source.text}
+                                            onClick={() => {
+                                                const displayEvent = new CustomEvent('displayFile', {
+                                                    detail: {
+                                                        filename: source.file_name,
+                                                        pageLabel: source.page_label,
+                                                    }
+                                                });
+                                                window.dispatchEvent(displayEvent);
+                                            }}
+                                        >
+                                            {source.file_name} - {source.page_label}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
