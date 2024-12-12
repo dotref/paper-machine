@@ -212,15 +212,27 @@ class AgentChat:
         self.llm_config = {"config_list": [{"model": 'gpt-4', "api_key": os.environ["OPENAI_API_KEY"]}]}
         self.message_queue = None
         self.knowledge_base = knowledge_base
+        self._chat_history = []
 
-        # Create agents
-        self.human_proxy = self._create_user_proxy_agent()
+        # Create Group Chat
+
+        self.user_proxy_agent = self._create_user_proxy_agent()
         self.query_analyzer = self._create_query_analyzer_agent()
         self.rag_agent = self._create_rag_agent()
         self.enhancement_agent = self._create_enhancement_agent()
 
+        self.group_chat = GroupChat(
+            agents=[self.user_proxy_agent, self.query_analyzer, self.rag_agent, self.enhancement_agent],
+            messages=[]
+        )
 
-    async def _safe_generate_reply(self, agent, messages, max_retries=3, timeout=10):
+        self.group_chat_manager = GroupChatManager(
+            groupchat=self.group_chat,
+            llm_config=self.llm_config
+        )
+
+
+    async def _safe_generate_reply(self, agent, messages, max_retries=3, timeout=30, sources=[]):
         """Helper function to safely generate and send replies with timeout and error handling"""
         try:
             # Create task with timeout
@@ -228,7 +240,7 @@ class AgentChat:
                 flag, response = await agent.a_generate_oai_reply(messages)
                 if not response:
                     return True, "ERROR: I encountered an error generating a response. Please try again."
-                self._send_message(agent.name, response)
+                self._send_message(agent.name, response, sources)
                 return flag, response
         except asyncio.TimeoutError:
             logger.error(f"Timeout error generating reply for {agent.name}")
@@ -238,16 +250,16 @@ class AgentChat:
             return True, f"ERROR: {str(e)}"
 
 
-    def _is_error(self, message: str) -> bool:
-        return "ERROR" in message
-
-
     def _send_message(self, sender: str, content: str, sources: list[dict] = []) -> None:
         """Helper method to send messages to the queue"""
         logger.info(f"Sending message from {sender}: {content}")
+        logger.info(f"Sources length: {len(sources)}")
+
+        name = ' '.join(word.capitalize() for word in sender.split('_'))
+
         if self.message_queue:
             self.message_queue.put({
-                "sender": sender,
+                "sender": name,
                 "content": content,
                 "sources": sources
             })
@@ -255,37 +267,70 @@ class AgentChat:
             logger.warning("Message queue not set!")
 
 
+    def _create_group_chat_manager(self) -> GroupChatManager:
+        system_message = """You are a helpful group chat manager. 
+        Your job is to forward messages between agents based on the flow below.
+
+        user_proxy_agent:
+        - If the user_proxy_agent returns a QUESTION, you must pass it to the query_analyzer_agent.
+
+        query_analyzer_agent:
+        - If the query_analyzer_agent returns an ERROR, you must pass it to the user_proxy_agent.
+        - If the query_analyzer_agent returns a CLARIFICATION REQUEST, you must pass it to the user_proxy_agent.
+        - If the query_analyzer_agent returns a INFORMATION REQUEST, you must pass it to the enhancement_agent.
+        - If the query_analyzer_agent returns a INSTRUCTIONS REQUEST, you must pass it to the rag_agent.
+
+        rag_agent:
+        - If the rag_agent returns an ERROR, you must pass it to the user_proxy_agent.
+        - If the rag_agent returns REPAIR INSTRUCTIONS, you must pass it to the enhancement_agent.
+
+        enhancement_agent:
+        - If the enhancement_agent returns an ERROR, you must pass it to the user_proxy_agent.
+        - If the enhancement_agent returns a TECHNICAL TERMS EXPLAINED, you must pass it to the user_proxy_agent.
+        - If the enhancement_agent returns an INFORMATION EXPLAINED, you must pass it to the user_proxy_agent.
+        
+        """
+        group_chat_manager = GroupChatManager(
+            name="group_chat_manager",
+            groupchat=self.group_chat,
+            llm_config=self.llm_config,
+            system_message=system_message
+        )
+        return group_chat_manager
+
+
     def _create_user_proxy_agent(self) -> ConversableAgent:
         """Creates the human proxy agent to represent the user in the chat"""
-        user_proxy = UserProxyAgent(
-            name="user_proxy",
-            code_execution_config={"use_docker": False}
+        user_proxy_agent = UserProxyAgent(
+            name="user_proxy_agent",
+            human_input_mode="NEVER",
+            code_execution_config={"use_docker": False},
+            is_termination_msg=lambda message: True # Always True
         )
-
-        # No message handler needed
-
-        return user_proxy
+        return user_proxy_agent
 
 
     def _create_query_analyzer_agent(self) -> ConversableAgent:
         """Creates the query analysis agent"""
-        system_message = """You analyze car repair queries to ensure they contain all required information.
-        Required information:
-        1. Specific part or system involved
-        2. Nature of the problem or maintenance task
+        system_message = """You are a helpful assistant trusted to analyze users' car repair questions.
+        You must follow the below flow:
 
-        If any information is missing, ask ONE question at a time to get it.
-        If all information is present, create a SUMMARY in this format:
+        When you receive a QUESTION, you must determine whether the user is asking for information or repair instructions.
+        - If the user is asking for information, you must return an INFORMATION REQUEST using the format:
+INFORMATION REQUEST: [User's question]
+        - If the user is asking for repair instructions, you must first determine if you have all the information to construct an INSTRUCTIONS REQUEST.
+            - If you have all the information, you must return an INSTRUCTIONS REQUEST using the format:
+INSTRUCTIONS REQUEST:
+- Part/System: [Specific part]
+- Task: [Detailed description of the problem/task]
+            - If you do not have all the information, you must return a CLARIFICATION REQUEST using the format:
+CLARIFICATION REQUEST: [Request for missing information]
 
-        SUMMARY:
-        Part/System: [Specific part]
-        Task: [Detailed description of the problem/task]
-        Additional Notes: [Any relevant details provided by user]
-
-        Return ONLY the question if information is missing, or ONLY the SUMMARY if all information is present."""
+        Return your response to the group_chat_manager only.
+        """
 
         agent = ConversableAgent(
-            name="Query Analyzer Agent",
+            name="query_analyzer_agent",
             system_message=system_message,
             llm_config=self.llm_config
         )
@@ -308,19 +353,20 @@ class AgentChat:
 
 
     def _create_rag_agent(self) -> ConversableAgent:
-        """Creates the RAG agent"""
+        """Creates the rag_agent"""
         system_message = """You handle knowledge base queries for car repair information.
-        When you receive a SUMMARY, use the retrieved sources to generate repair instructions for the user's issue
+        When you receive a INSTRUCTIONS REQUEST, use the retrieved sources to generate repair instructions for the user's issue
 
         Always structure your response as:
 
         REPAIR INSTRUCTIONS:
         [Clear and concise formatted instructions]
 
-        Do NOT make up information or rely on general knowledge."""
+        Do NOT make up information or rely on general knowledge.
+        Return your response to the group_chat_manager only."""
 
         agent = ConversableAgent(
-            name="RAG Agent",
+            name="rag_agent",
             system_message=system_message,
             llm_config=self.llm_config
         )
@@ -328,7 +374,7 @@ class AgentChat:
         async def query_knowledge_base(query: str) -> list[NodeWithScore]:
             logger.info(f"Querying knowledge base: {query}")
             try:
-                async with asyncio.timeout(10):
+                async with asyncio.timeout(30):
                     nodes_with_scores = await self.knowledge_base.retrieve(query)
                     return nodes_with_scores
             except asyncio.TimeoutError:
@@ -370,7 +416,7 @@ class AgentChat:
 
             messages[-1]["content"] += "\n" + results
             
-            flag, response = await self._safe_generate_reply(self.rag_agent, messages)
+            flag, response = await self._safe_generate_reply(self.rag_agent, messages, sources=sources)
             return flag, response
 
         agent.register_reply(
@@ -381,24 +427,27 @@ class AgentChat:
         return agent
 
     def _create_enhancement_agent(self) -> ConversableAgent:
-        """Creates the enhancement agent"""
-        system_message = """You enhance repair instructions by:
-        1. Identifying technical terms and jargon
-        2. Adding clear explanations
-        3. Formatting for readability
+        """Creates the enhancement_agent"""
+        system_message = """You are a helpful assistant trusted to help users with technical questions related to car repair.
 
-        When you receive REPAIR INSTRUCTIONS, identify the technical terms and jargon and explain them in a simple way.
-        Always structure your response as:
-
-        TECHNICAL TERMS EXPLAINED:
-        - Term 1: Simple explanation
-        - Term 2: Simple explanation with analogy
-
-        SAFETY NOTES:
-        [Any relevant safety information]"""
+        When you receive REPAIR INSTRUCTIONS, identify the technical terms and return a INSTRUCTIONS ENHANCED using the format:
+INSTRUCTIONS ENHANCED:
+    TECHNICAL TERMS EXPLAINED:
+    - Term 1: Simple explanation
+    - Term 2: Simple explanation with analogy
+TOOLS CHECKLIST:
+[List of tools needed to complete the repair]
+        
+        When you receive an INFORMATION REQUEST, return an INFORMATION EXPLAINED using the format:
+INFORMATION EXPLAINED:
+- [User's question]
+- [Explanation of the information]
+        
+        Return your response to the group_chat_manager only.
+        """
 
         agent = ConversableAgent(
-            name="Enhancement Agent",
+            name="enhancement_agent",
             system_message=system_message,
             llm_config=self.llm_config
         )
@@ -435,53 +484,14 @@ class AgentChat:
             return
 
         try:
-            # Step 1: Query Analysis
-            query_analyzer_response = await self.human_proxy.a_initiate_chat(
-                self.query_analyzer,
-                message=message,
-                clear_history=False,
-                max_turns=1
-            )
-            
-            logger.info(f"Query analyzer response: {query_analyzer_response}")
-            query_analyzer_message = query_analyzer_response.summary
+            # resume group chat
+            if self._chat_history:
+                self.group_chat_manager.resume(self._chat_history)
 
-            if self._is_error(query_analyzer_message):
-                self._send_message("System", query_analyzer_message)
-                return
+            question = "QUESTION: " + message
 
-            # If response is a question (no SUMMARY found), end conversation
-            if not self._is_summary(query_analyzer_message):
-                return
-            
-            # Step 2: RAG Query
-            rag_response = await self.human_proxy.a_initiate_chat(
-                self.rag_agent,
-                message=query_analyzer_message,
-                max_turns=1
-            )
+            await self.user_proxy_agent.a_initiate_chat(recipient=self.group_chat_manager, message=question, clear_history=False)
 
-            logger.info(f"RAG agent response: {rag_response}")
-            rag_response_message = rag_response.summary
-
-            if self._is_error(rag_response_message):
-                self._send_message("System", rag_response_message)
-                return
-            
-            # Step 3: Enhancement
-            enhancement_response = await self.human_proxy.a_initiate_chat(
-                self.enhancement_agent,
-                message=rag_response_message,
-                max_turns=1
-            )
-
-            logger.info(f"Enhancement agent response: {enhancement_response}")
-            enhancement_response_message = enhancement_response.summary
-
-            if self._is_error(enhancement_response_message):
-                self._send_message("System", enhancement_response_message)
-                return
-            
             logger.info("Message processing complete")
         except Exception as e:
             logger.error(f"Error processing message: {str(e)}", exc_info=True)
