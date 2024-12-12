@@ -3,7 +3,7 @@ import os
 import re
 from dotenv import load_dotenv
 import logging
-
+import asyncio
 logger = logging.getLogger(__name__)
 
 import pyprojroot
@@ -51,6 +51,7 @@ class MultiDocumentRetrieval():
         self._retrievers = {}
         self._modified = False
     
+
     def setup_indicies(self) -> None:
         '''
         Setup indicies for documents with existing indices in the upload directory.
@@ -218,6 +219,29 @@ class AgentChat:
         self.rag_agent = self._create_rag_agent()
         self.enhancement_agent = self._create_enhancement_agent()
 
+
+    async def _safe_generate_reply(self, agent, messages, max_retries=3, timeout=10):
+        """Helper function to safely generate and send replies with timeout and error handling"""
+        try:
+            # Create task with timeout
+            async with asyncio.timeout(timeout):
+                flag, response = await agent.a_generate_oai_reply(messages)
+                if not response:
+                    return True, "ERROR: I encountered an error generating a response. Please try again."
+                self._send_message(agent.name, response)
+                return flag, response
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout error generating reply for {agent.name}")
+            return True, "ERROR: I took too long to respond. Please try again."
+        except Exception as e:
+            logger.error(f"Error generating reply for {agent.name}: {str(e)}", exc_info=True)
+            return True, f"ERROR: {str(e)}"
+
+
+    def _is_error(self, message: str) -> bool:
+        return "ERROR" in message
+
+
     def _send_message(self, sender: str, content: str, sources: list[dict] = []) -> None:
         """Helper method to send messages to the queue"""
         logger.info(f"Sending message from {sender}: {content}")
@@ -229,6 +253,7 @@ class AgentChat:
             })
         else:
             logger.warning("Message queue not set!")
+
 
     def _create_user_proxy_agent(self) -> ConversableAgent:
         """Creates the human proxy agent to represent the user in the chat"""
@@ -260,7 +285,7 @@ class AgentChat:
         Return ONLY the question if information is missing, or ONLY the SUMMARY if all information is present."""
 
         agent = ConversableAgent(
-            name="query_analyzer",
+            name="Query Analyzer Agent",
             system_message=system_message,
             llm_config=self.llm_config
         )
@@ -271,10 +296,7 @@ class AgentChat:
             sender: Optional[Agent] = None,
             config: Optional[Any] = None,
         ) -> Tuple[bool, Union[str, Dict, None]]:
-            logger.info(f"Query analyzer received message: {messages}")
-            flag, response = await self.query_analyzer.a_generate_oai_reply(messages)
-            logger.info(f"Query analyzer response: {response}")
-            self._send_message("Query Analyzer", response)
+            flag, response = await self._safe_generate_reply(self.query_analyzer, messages)
             return flag, response
 
         agent.register_reply(
@@ -283,6 +305,7 @@ class AgentChat:
         )
         
         return agent
+
 
     def _create_rag_agent(self) -> ConversableAgent:
         """Creates the RAG agent"""
@@ -297,7 +320,7 @@ class AgentChat:
         Do NOT make up information or rely on general knowledge."""
 
         agent = ConversableAgent(
-            name="rag_agent",
+            name="RAG Agent",
             system_message=system_message,
             llm_config=self.llm_config
         )
@@ -305,23 +328,30 @@ class AgentChat:
         async def query_knowledge_base(query: str) -> list[NodeWithScore]:
             logger.info(f"Querying knowledge base: {query}")
             try:
-                nodes_with_scores = await self.knowledge_base.retrieve(query)
-                return nodes_with_scores
-                
+                async with asyncio.timeout(10):
+                    nodes_with_scores = await self.knowledge_base.retrieve(query)
+                    return nodes_with_scores
+            except asyncio.TimeoutError:
+                logger.error("Timeout error during document retrieval")
+                raise TimeoutError("Document retrieval took too long")
             except Exception as e:
                 logger.error(f"Error querying knowledge base: {str(e)}", exc_info=True)
-                return f"Error querying knowledge base: {str(e)}"
-
+                raise
+                
         async def reply_func(
             recipient: ConversableAgent,
             messages: Optional[List[Dict]] = None,
             sender: Optional[Agent] = None,
             config: Optional[Any] = None,
         ) -> Tuple[bool, Union[str, Dict, None]]:
-            logger.info(f"RAG agent received message: {messages}")
             last_message = messages[-1].get("content")
-            nodes_with_scores = await query_knowledge_base(last_message)
-
+            
+            try:
+                nodes_with_scores = await query_knowledge_base(last_message)
+            except Exception as e:
+                error_msg = f"ERROR: {str(e)}"
+                return True, error_msg
+            
             results = "SOURCES:\n"
             sources = []
             for node_with_score in nodes_with_scores:
@@ -338,14 +368,9 @@ class AgentChat:
                     "text": node_with_score.node.text
                 })
 
-            # append results to last message
             messages[-1]["content"] += "\n" + results
-
-            # generate openai response with query + knowledge base results as context
-            flag, response = await self.rag_agent.a_generate_oai_reply(messages)
-
-            logger.info(f"RAG agent response: {response}")
-            self._send_message("RAG Agent", response, sources)
+            
+            flag, response = await self._safe_generate_reply(self.rag_agent, messages)
             return flag, response
 
         agent.register_reply(
@@ -373,7 +398,7 @@ class AgentChat:
         [Any relevant safety information]"""
 
         agent = ConversableAgent(
-            name="enhancement_agent",
+            name="Enhancement Agent",
             system_message=system_message,
             llm_config=self.llm_config
         )
@@ -384,10 +409,7 @@ class AgentChat:
             sender: Optional[Agent] = None,
             config: Optional[Any] = None,
         ) -> Tuple[bool, Union[str, Dict, None]]:
-            logger.info(f"Enhancement agent received message: {messages}")
-            flag, response = await self.enhancement_agent.a_generate_oai_reply(messages)
-            logger.info(f"Enhancement agent response: {response}")
-            self._send_message("Enhancement Agent", response)
+            flag, response = await self._safe_generate_reply(self.enhancement_agent, messages)
             return flag, response
 
         agent.register_reply(
@@ -407,44 +429,63 @@ class AgentChat:
         """Main method to process user messages"""
         logger.info("Processing message")
 
-        # if no documents, return
+        # if no documents, return early
         if not self.knowledge_base._retriever:
             self._send_message("System", "No documents found. Please upload documents first.")
             return
 
-        # Step 1: Query Analysis
-        query_analyzer_response = await self.human_proxy.a_initiate_chat(
-            self.query_analyzer,
-            message=message,
-            clear_history=False,
-            max_turns=1
-        )
-        
-        logger.info(f"Query analyzer response: {query_analyzer_response}")
-        query_analyzer_message = query_analyzer_response.summary
-
-        # If response is a question (no SUMMARY found), end conversation
-        if not self._is_summary(query_analyzer_message):
-            return
+        try:
+            # Step 1: Query Analysis
+            query_analyzer_response = await self.human_proxy.a_initiate_chat(
+                self.query_analyzer,
+                message=message,
+                clear_history=False,
+                max_turns=1
+            )
             
-        # Step 2: RAG Query
-        rag_response = await self.human_proxy.a_initiate_chat(
-            self.rag_agent,
-            message=query_analyzer_message,
-            max_turns=1
-        )
+            logger.info(f"Query analyzer response: {query_analyzer_response}")
+            query_analyzer_message = query_analyzer_response.summary
 
-        logger.info(f"RAG agent response: {rag_response}")
-        rag_response_message = rag_response.summary
-        
-        # Step 3: Enhancement
-        await self.human_proxy.a_initiate_chat(
-            self.enhancement_agent,
-            message=rag_response_message,
-            max_turns=1
-        )
-        
-        logger.info("Message processing complete")
+            if self._is_error(query_analyzer_message):
+                self._send_message("System", query_analyzer_message)
+                return
+
+            # If response is a question (no SUMMARY found), end conversation
+            if not self._is_summary(query_analyzer_message):
+                return
+            
+            # Step 2: RAG Query
+            rag_response = await self.human_proxy.a_initiate_chat(
+                self.rag_agent,
+                message=query_analyzer_message,
+                max_turns=1
+            )
+
+            logger.info(f"RAG agent response: {rag_response}")
+            rag_response_message = rag_response.summary
+
+            if self._is_error(rag_response_message):
+                self._send_message("System", rag_response_message)
+                return
+            
+            # Step 3: Enhancement
+            enhancement_response = await self.human_proxy.a_initiate_chat(
+                self.enhancement_agent,
+                message=rag_response_message,
+                max_turns=1
+            )
+
+            logger.info(f"Enhancement agent response: {enhancement_response}")
+            enhancement_response_message = enhancement_response.summary
+
+            if self._is_error(enhancement_response_message):
+                self._send_message("System", enhancement_response_message)
+                return
+            
+            logger.info("Message processing complete")
+        except Exception as e:
+            logger.error(f"Error processing message: {str(e)}", exc_info=True)
+            self._send_message("System", f"An unexpected error occurred: {str(e)}")
 
     def set_message_queue(self, queue):
         """Set the message queue for this chat session"""
