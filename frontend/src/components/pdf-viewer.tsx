@@ -140,6 +140,10 @@ export default function PdfViewer() {
         }
     }
 
+    const handleCloseStatus = () => {
+        setUploadStatus(null);
+    };
+
     return (
         <div className="flex flex-col h-full border rounded-lg p-4">
             <div className="mb-4">
@@ -165,11 +169,17 @@ export default function PdfViewer() {
             </div>
             {/* Status message */}
             {uploadStatus && (
-                <div className={`mb-4 p-3 rounded ${
+                <div className={`relative mb-4 p-3 rounded ${
                     uploadStatus.status === 'processed' 
                         ? 'bg-green-100 text-green-800' 
                         : 'bg-red-100 text-red-800'
                 }`}>
+                    <button 
+                        className="absolute top-0 right-0 mt-2 mr-2 text-lg font-bold"
+                        onClick={handleCloseStatus}
+                    >
+                        &times;
+                    </button>
                     {uploadStatus.message}
                 </div>
             )}
