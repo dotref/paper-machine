@@ -15,6 +15,7 @@ export default function PdfViewer() {
     const [isUploading, setIsUploading] = useState(false)
     const [fileType, setFileType] = useState<'pdf' | 'txt' | null>(null)
     const [uploadedFiles, setUploadedFiles] = useState<{ original: string, stored: string }[]>([]);
+    const [isUploadSectionVisible, setIsUploadSectionVisible] = useState(true);
 
     // Function to determine file type
     const getFileType = (filename: string): 'pdf' | 'txt' | null => {
@@ -154,11 +155,20 @@ export default function PdfViewer() {
         window.dispatchEvent(event);
     };
 
+    const toggleUploadSection = () => {
+        setIsUploadSectionVisible(!isUploadSectionVisible);
+    };
+
     return (
         <div className="flex flex-col h-full space-y-4">
             <div className="border rounded-lg p-4">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold">Uploaded Files</h3>
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center">
+                        <h3 className="text-lg font-semibold">Uploaded Files</h3>
+                        <button onClick={toggleUploadSection} className="ml-2 text-lg">
+                            {isUploadSectionVisible ? '▼' : '▲'}
+                        </button>
+                    </div>
                     <input
                         type="file"
                         accept=".pdf,.txt"
@@ -178,27 +188,35 @@ export default function PdfViewer() {
                         </Button>
                     </label>
                 </div>
-                {/* Uploaded files list */}
-                <ul className="list-disc pl-5">
-                    {uploadedFiles.map((file, index) => (
-                        <li key={index} className="cursor-pointer text-blue-500" onClick={() => handleFileClick(file.stored)}>
-                            {file.original}
-                        </li>
-                    ))}
-                </ul>
-                {/* Status message */}
-                {uploadStatus && uploadStatus.message && (
-                    <div className={`relative border rounded-lg p-4 mt-4 ${uploadStatus.status === 'processed'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                        }`}>
-                        <button
-                            className="absolute top-0 right-0 mt-2 mr-2 text-lg font-bold"
-                            onClick={handleCloseStatus}
-                        >
-                            &times;
-                        </button>
-                        {uploadStatus.message}
+                {isUploadSectionVisible && (
+                    <div className="mt-4">
+                        {/* Uploaded files list */}
+                        {uploadedFiles.length === 0 ? (
+                            <p className="text-gray-500">No files uploaded yet.</p>
+                        ) : (
+                            <ul className="list-disc pl-5">
+                                {uploadedFiles.map((file, index) => (
+                                    <li key={index} className="cursor-pointer text-blue-500" onClick={() => handleFileClick(file.stored)}>
+                                        {file.original}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                        {/* Status message */}
+                        {uploadStatus && uploadStatus.message && (
+                            <div className={`relative border rounded-lg p-4 mt-4 ${uploadStatus.status === 'processed'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                                }`}>
+                                <button
+                                    className="absolute top-0 right-0 mt-2 mr-2 text-lg font-bold"
+                                    onClick={handleCloseStatus}
+                                >
+                                    &times;
+                                </button>
+                                {uploadStatus.message}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
