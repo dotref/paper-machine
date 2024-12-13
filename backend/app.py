@@ -126,6 +126,7 @@ def upload_document():
         }), 400
 
     if file and allowed_file(file.filename):
+        original_filename = file.filename
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
@@ -146,7 +147,8 @@ def upload_document():
 
                 return jsonify({
                     "message": f"File uploaded successfully",
-                    "filename": filename,
+                    "filename": original_filename,  # Return the original file name
+                    "stored_filename": filename,  # Return the stored file name
                     "status": "processed",
                     "file_type": file_ext[1:].upper()  # Remove the dot and capitalize
                 })
@@ -295,6 +297,13 @@ def shutdown_session(exception=None):
 @app.route("/uploads/<filename>")
 def serve_file(filename):
     """Serve uploaded files."""
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    logger.info(f"Request to serve file: {file_path}")
+    
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return jsonify({"error": "File not found"}), 404
+    
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 

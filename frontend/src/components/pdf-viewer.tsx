@@ -14,7 +14,7 @@ export default function PdfViewer() {
     const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null)
     const [isUploading, setIsUploading] = useState(false)
     const [fileType, setFileType] = useState<'pdf' | 'txt' | null>(null)
-    const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+    const [uploadedFiles, setUploadedFiles] = useState<{ original: string, stored: string }[]>([]);
 
     // Function to determine file type
     const getFileType = (filename: string): 'pdf' | 'txt' | null => {
@@ -94,13 +94,13 @@ export default function PdfViewer() {
                 const url = URL.createObjectURL(file)
                 setFileUrl(url)
                 setFileType(getFileType(file.name))
-                setUploadedFiles(prevFiles => [...prevFiles, file.name]);
+                setUploadedFiles(prevFiles => [...prevFiles, { original: data.filename, stored: data.stored_filename }]);
 
                 const uploadEvent = new CustomEvent('fileUploaded', {
                     detail: {
-                        filename: file.name,
+                        filename: data.stored_filename,
                         status: 'success',
-                        message: `Now viewing ${file.name}`
+                        message: `Now viewing ${data.filename}`
                     }
                 })
                 window.dispatchEvent(uploadEvent)
@@ -147,8 +147,9 @@ export default function PdfViewer() {
     };
 
     const handleFileClick = async (filename: string) => {
+        const encodedFilename = encodeURIComponent(filename);
         const event = new CustomEvent('displayFile', {
-            detail: { filename, pageLabel: '0' }
+            detail: { filename: encodedFilename, pageLabel: '0' }
         });
         window.dispatchEvent(event);
     };
@@ -179,9 +180,9 @@ export default function PdfViewer() {
                 </div>
                 {/* Uploaded files list */}
                 <ul className="list-disc pl-5">
-                    {uploadedFiles.map((filename, index) => (
-                        <li key={index} className="cursor-pointer text-blue-500" onClick={() => handleFileClick(filename)}>
-                            {filename}
+                    {uploadedFiles.map((file, index) => (
+                        <li key={index} className="cursor-pointer text-blue-500" onClick={() => handleFileClick(file.stored)}>
+                            {file.original}
                         </li>
                     ))}
                 </ul>
