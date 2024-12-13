@@ -173,6 +173,24 @@ def upload_document():
         "status": "error"
     }), 400
 
+# Document Removal
+@app.route("/remove/<filename>", methods=["DELETE"])
+def remove_document(filename):
+    logger.info(f"Remove endpoint triggered for file: {filename}")
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return jsonify({"message": "File not found", "status": "error"}), 404
+    
+    try:
+        os.remove(file_path)
+        logger.info(f"File removed successfully: {filename}")
+        return jsonify({"message": "File removed successfully", "status": "success"})
+    except Exception as e:
+        logger.error(f"Error removing file: {str(e)}")
+        return jsonify({"message": "Error removing file", "status": "error", "error": str(e)}), 500
+
 # Global chat sessions dictionary to store AgentChat instances
 chat_sessions = {}
 

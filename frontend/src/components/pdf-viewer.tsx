@@ -16,6 +16,7 @@ export default function PdfViewer() {
     const [fileType, setFileType] = useState<'pdf' | 'txt' | null>(null)
     const [uploadedFiles, setUploadedFiles] = useState<{ original: string, stored: string }[]>([]);
     const [isUploadSectionVisible, setIsUploadSectionVisible] = useState(true);
+    const [fileToRemove, setFileToRemove] = useState<string | null>(null);
 
     // Function to determine file type
     const getFileType = (filename: string): 'pdf' | 'txt' | null => {
@@ -136,6 +137,49 @@ export default function PdfViewer() {
         }
     }
 
+    const confirmRemoveFile = (filename: string) => {
+        setFileToRemove(filename);
+    };
+
+    const cancelRemoveFile = () => {
+        setFileToRemove(null);
+    };
+
+    const removeFile = async (filename: string) => {
+        try {
+            const response = await fetch(`http://localhost:5000/remove/${filename}`, {
+                method: 'DELETE',
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                setUploadedFiles(prevFiles => prevFiles.filter(file => file.stored !== filename));
+                setFileUrl(null);
+                setUploadStatus({
+                    filename: filename,
+                    status: 'success',
+                    message: 'File removed successfully'
+                });
+            } else {
+                setUploadStatus({
+                    filename: filename,
+                    status: 'error',
+                    message: data.message || 'Remove failed'
+                });
+            }
+        } catch (error) {
+            console.error('Remove error:', error);
+            setUploadStatus({
+                filename: filename,
+                status: 'error',
+                message: 'Error removing file'
+            });
+        } finally {
+            setFileToRemove(null);
+        }
+    };
+
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0]
         if (file) {
@@ -196,8 +240,34 @@ export default function PdfViewer() {
                         ) : (
                             <ul className="list-disc pl-5">
                                 {uploadedFiles.map((file, index) => (
-                                    <li key={index} className="cursor-pointer text-blue-500" onClick={() => handleFileClick(file.stored)}>
-                                        {file.original}
+                                    <li key={index} className="flex flex-col">
+                                        <div className="flex justify-between items-center">
+                                            <span className="cursor-pointer text-blue-500" onClick={() => handleFileClick(file.stored)}>
+                                                {file.original}
+                                            </span>
+                                            <button
+                                                className="ml-4 text-red-500"
+                                                onClick={() => confirmRemoveFile(file.stored)}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                        {fileToRemove === file.stored && (
+                                            <div className="flex justify-end mt-2 space-x-2">
+                                                <button
+                                                    className="text-red-500"
+                                                    onClick={() => removeFile(file.stored)}
+                                                >
+                                                    Confirm
+                                                </button>
+                                                <button
+                                                    className="text-gray-500"
+                                                    onClick={cancelRemoveFile}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        )}
                                     </li>
                                 ))}
                             </ul>
