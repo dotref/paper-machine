@@ -185,6 +185,7 @@ def remove_document(filename):
     
     try:
         os.remove(file_path)
+        knowledge_base.delete_indices()
         logger.info(f"File removed successfully: {filename}")
         return jsonify({"message": "File removed successfully", "status": "success"})
     except Exception as e:
@@ -324,6 +325,24 @@ def serve_file(filename):
     
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+# Add this new route in backend/app.py
+@app.route("/files", methods=["GET"])
+def list_files():
+    """List all files in the upload folder."""
+    try:
+        files = []
+        for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+            if allowed_file(filename):
+                # For each file, return both the stored filename and the original filename
+                # Note: In this case, they're the same since we don't have original filenames stored
+                files.append({
+                    "original": filename,
+                    "stored": filename
+                })
+        return jsonify({"files": files})
+    except Exception as e:
+        logger.error(f"Error listing files: {str(e)}")
+        return jsonify({"error": "Error listing files"}), 500
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")

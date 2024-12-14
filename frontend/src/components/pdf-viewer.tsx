@@ -78,6 +78,27 @@ export default function PdfViewer() {
         };
     }, []);
 
+    useEffect(() => {
+        const fetchExistingFiles = async () => {
+            try {
+                const response = await fetch('http://localhost:5000/files');
+                if (!response.ok) throw new Error('Failed to fetch files');
+                
+                const data = await response.json();
+                setUploadedFiles(data.files);
+            } catch (error) {
+                console.error('Error fetching existing files:', error);
+                setUploadStatus({
+                    filename: '',
+                    status: 'error',
+                    message: 'Error loading existing files'
+                });
+            }
+        };
+
+        fetchExistingFiles();
+    }, []);
+
     const uploadToServer = async (file: File) => {
         setIsUploading(true)
         const formData = new FormData()
@@ -238,34 +259,41 @@ export default function PdfViewer() {
                         {uploadedFiles.length === 0 ? (
                             <p className="text-gray-500">No files uploaded yet.</p>
                         ) : (
-                            <ul className="list-disc pl-5">
+                            <ul className="space-y-2">
                                 {uploadedFiles.map((file, index) => (
                                     <li key={index} className="flex flex-col">
-                                        <div className="flex justify-between items-center">
-                                            <span className="cursor-pointer text-blue-500" onClick={() => handleFileClick(file.stored)}>
+                                        <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
+                                            <Button
+                                                variant="ghost"
+                                                className="text-blue-500 hover:text-blue-700 flex-grow text-left"
+                                                onClick={() => handleFileClick(file.stored)}
+                                            >
                                                 {file.original}
-                                            </span>
-                                            <button
-                                                className="ml-4 text-red-500"
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                className="text-red-500 hover:text-red-700"
                                                 onClick={() => confirmRemoveFile(file.stored)}
                                             >
                                                 Remove
-                                            </button>
+                                            </Button>
                                         </div>
                                         {fileToRemove === file.stored && (
-                                            <div className="flex justify-end mt-2 space-x-2">
-                                                <button
-                                                    className="text-red-500"
+                                            <div className="flex justify-end mt-2 space-x-2 p-2 bg-gray-50 rounded-lg">
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
                                                     onClick={() => removeFile(file.stored)}
                                                 >
                                                     Confirm
-                                                </button>
-                                                <button
-                                                    className="text-gray-500"
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
                                                     onClick={cancelRemoveFile}
                                                 >
                                                     Cancel
-                                                </button>
+                                                </Button>
                                             </div>
                                         )}
                                     </li>
