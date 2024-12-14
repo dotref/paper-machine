@@ -126,6 +126,7 @@ def upload_document():
         }), 400
 
     if file and allowed_file(file.filename):
+        original_filename = file.filename
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
@@ -146,7 +147,8 @@ def upload_document():
 
                 return jsonify({
                     "message": f"File uploaded successfully",
-                    "filename": filename,
+                    "filename": original_filename,  # Return the original file name
+                    "stored_filename": filename,  # Return the stored file name
                     "status": "processed",
                     "file_type": file_ext[1:].upper()  # Remove the dot and capitalize
                 })
@@ -170,6 +172,25 @@ def upload_document():
         "message": "Invalid file type",
         "status": "error"
     }), 400
+
+# Document Removal
+@app.route("/remove/<filename>", methods=["DELETE"])
+def remove_document(filename):
+    logger.info(f"Remove endpoint triggered for file: {filename}")
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return jsonify({"message": "File not found", "status": "error"}), 404
+    
+    try:
+        os.remove(file_path)
+        knowledge_base.delete_indices()
+        logger.info(f"File removed successfully: {filename}")
+        return jsonify({"message": "File removed successfully", "status": "success"})
+    except Exception as e:
+        logger.error(f"Error removing file: {str(e)}")
+        return jsonify({"message": "Error removing file", "status": "error", "error": str(e)}), 500
 
 # Global chat sessions dictionary to store AgentChat instances
 chat_sessions = {}
@@ -295,8 +316,33 @@ def shutdown_session(exception=None):
 @app.route("/uploads/<filename>")
 def serve_file(filename):
     """Serve uploaded files."""
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    logger.info(f"Request to serve file: {file_path}")
+    
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return jsonify({"error": "File not found"}), 404
+    
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+# Add this new route in backend/app.py
+@app.route("/files", methods=["GET"])
+def list_files():
+    """List all files in the upload folder."""
+    try:
+        files = []
+        for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+            if allowed_file(filename):
+                # For each file, return both the stored filename and the original filename
+                # Note: In this case, they're the same since we don't have original filenames stored
+                files.append({
+                    "original": filename,
+                    "stored": filename
+                })
+        return jsonify({"files": files})
+    except Exception as e:
+        logger.error(f"Error listing files: {str(e)}")
+        return jsonify({"error": "Error listing files"}), 500
 
 if __name__ == "__main__":
     logger.info("Starting Flask application...")

@@ -14,6 +14,9 @@ export default function PdfViewer() {
     const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null)
     const [isUploading, setIsUploading] = useState(false)
     const [fileType, setFileType] = useState<'pdf' | 'txt' | null>(null)
+    const [uploadedFiles, setUploadedFiles] = useState<{ original: string, stored: string }[]>([]);
+    const [isUploadSectionVisible, setIsUploadSectionVisible] = useState(true);
+    const [fileToRemove, setFileToRemove] = useState<string | null>(null);
 
     // Function to determine file type
     const getFileType = (filename: string): 'pdf' | 'txt' | null => {
@@ -35,20 +38,20 @@ export default function PdfViewer() {
             try {
                 const response = await fetch(`http://localhost:5000/uploads/${filename}`);
                 if (!response.ok) throw new Error('Failed to fetch file');
-                
+
                 const blob = await response.blob();
                 const type = getFileType(filename);
                 setFileType(type);
-                
+
                 let url = URL.createObjectURL(blob);
-                
+
                 // For PDFs, add the page parameter
                 if (type === 'pdf') {
                     url = createPdfViewerUrl(url, pageLabel);
                 }
-                
+
                 setFileUrl(url);
-                
+
                 setUploadStatus({
                     filename: filename,
                     status: 'processed',
@@ -65,7 +68,7 @@ export default function PdfViewer() {
         };
 
         window.addEventListener('displayFile', handleDisplayFile as EventListener);
-        
+
         return () => {
             window.removeEventListener('displayFile', handleDisplayFile as EventListener);
             // Cleanup URLs
@@ -73,6 +76,27 @@ export default function PdfViewer() {
                 URL.revokeObjectURL(fileUrl.split('#')[0]); // Remove page parameter before revoking
             }
         };
+    }, []);
+
+    useEffect(() => {
+        const fetchExistingFiles = async () => {
+            try {
+                const response = await fetch('http://localhost:5000/files');
+                if (!response.ok) throw new Error('Failed to fetch files');
+                
+                const data = await response.json();
+                setUploadedFiles(data.files);
+            } catch (error) {
+                console.error('Error fetching existing files:', error);
+                setUploadStatus({
+                    filename: '',
+                    status: 'error',
+                    message: 'Error loading existing files'
+                });
+            }
+        };
+
+        fetchExistingFiles();
     }, []);
 
     const uploadToServer = async (file: File) => {
@@ -93,12 +117,13 @@ export default function PdfViewer() {
                 const url = URL.createObjectURL(file)
                 setFileUrl(url)
                 setFileType(getFileType(file.name))
-                
+                setUploadedFiles(prevFiles => [...prevFiles, { original: data.filename, stored: data.stored_filename }]);
+
                 const uploadEvent = new CustomEvent('fileUploaded', {
                     detail: {
-                        filename: file.name,
+                        filename: data.stored_filename,
                         status: 'success',
-                        message: `Now viewing ${file.name}`
+                        message: `Now viewing ${data.filename}`
                     }
                 })
                 window.dispatchEvent(uploadEvent)
@@ -119,7 +144,7 @@ export default function PdfViewer() {
                 status: 'error',
                 message: 'Upload failed'
             })
-            
+
             const uploadEvent = new CustomEvent('fileUploaded', {
                 detail: {
                     filename: file.name,
@@ -133,6 +158,49 @@ export default function PdfViewer() {
         }
     }
 
+    const confirmRemoveFile = (filename: string) => {
+        setFileToRemove(filename);
+    };
+
+    const cancelRemoveFile = () => {
+        setFileToRemove(null);
+    };
+
+    const removeFile = async (filename: string) => {
+        try {
+            const response = await fetch(`http://localhost:5000/remove/${filename}`, {
+                method: 'DELETE',
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                setUploadedFiles(prevFiles => prevFiles.filter(file => file.stored !== filename));
+                setFileUrl(null);
+                setUploadStatus({
+                    filename: filename,
+                    status: 'success',
+                    message: 'File removed successfully'
+                });
+            } else {
+                setUploadStatus({
+                    filename: filename,
+                    status: 'error',
+                    message: data.message || 'Remove failed'
+                });
+            }
+        } catch (error) {
+            console.error('Remove error:', error);
+            setUploadStatus({
+                filename: filename,
+                status: 'error',
+                message: 'Error removing file'
+            });
+        } finally {
+            setFileToRemove(null);
+        }
+    };
+
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0]
         if (file) {
@@ -140,55 +208,136 @@ export default function PdfViewer() {
         }
     }
 
-    return (
-        <div className="flex flex-col h-full border rounded-lg p-4">
-            <div className="mb-4">
-                <input
-                    type="file"
-                    accept=".pdf,.txt" // txt should be supported too
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="pdf-upload"
-                />
-                <label htmlFor="pdf-upload">
-                    <Button 
-                        variant="outline" 
-                        className="w-full" 
-                        asChild
-                        disabled={isUploading}
-                    >
-                        <span className="cursor-pointer">
-                            {isUploading ? 'Uploading...' : 'Upload PDF/TXT'}
-                        </span>
-                    </Button>
-                </label>
-            </div>
-            {/* Status message */}
-            {uploadStatus && (
-                <div className={`mb-4 p-3 rounded ${
-                    uploadStatus.status === 'processed' 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                }`}>
-                    {uploadStatus.message}
-                </div>
-            )}
+    const handleCloseStatus = () => {
+        setUploadStatus(prevStatus => prevStatus ? { ...prevStatus, message: '' } : null);
+    };
 
-            <div className="flex-grow overflow-auto">
+    const handleFileClick = async (filename: string) => {
+        const encodedFilename = encodeURIComponent(filename);
+        const event = new CustomEvent('displayFile', {
+            detail: { filename: encodedFilename, pageLabel: '0' }
+        });
+        window.dispatchEvent(event);
+    };
+
+    const toggleUploadSection = () => {
+        setIsUploadSectionVisible(!isUploadSectionVisible);
+    };
+
+    return (
+        <div className="flex flex-col h-full space-y-4">
+            <div className="border rounded-lg p-4">
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center">
+                        <h3 className="text-lg font-semibold">Uploaded Files</h3>
+                        <button onClick={toggleUploadSection} className="ml-2 text-lg">
+                            {isUploadSectionVisible ? '▼' : '▲'}
+                        </button>
+                    </div>
+                    <input
+                        type="file"
+                        accept=".pdf,.txt"
+                        onChange={handleFileChange}
+                        className="hidden"
+                        id="pdf-upload"
+                    />
+                    <label htmlFor="pdf-upload">
+                        <Button
+                            variant="outline"
+                            asChild
+                            disabled={isUploading}
+                        >
+                            <span className="cursor-pointer">
+                                {isUploading ? 'Uploading...' : 'Upload PDF/TXT'}
+                            </span>
+                        </Button>
+                    </label>
+                </div>
+                {isUploadSectionVisible && (
+                    <div className="mt-4">
+                        {/* Uploaded files list */}
+                        {uploadedFiles.length === 0 ? (
+                            <p className="text-gray-500">No files uploaded yet.</p>
+                        ) : (
+                            <ul className="space-y-2">
+                                {uploadedFiles.map((file, index) => (
+                                    <li key={index} className="flex flex-col">
+                                        <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
+                                            <Button
+                                                variant="ghost"
+                                                className="text-blue-500 hover:text-blue-700 flex-grow text-left"
+                                                onClick={() => handleFileClick(file.stored)}
+                                            >
+                                                {file.original}
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                className="text-red-500 hover:text-red-700"
+                                                onClick={() => confirmRemoveFile(file.stored)}
+                                            >
+                                                Remove
+                                            </Button>
+                                        </div>
+                                        {fileToRemove === file.stored && (
+                                            <div className="flex justify-end mt-2 space-x-2 p-2 bg-gray-50 rounded-lg">
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    onClick={() => removeFile(file.stored)}
+                                                >
+                                                    Confirm
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={cancelRemoveFile}
+                                                >
+                                                    Cancel
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                        {/* Status message */}
+                        {uploadStatus && uploadStatus.message && (
+                            <div className={`relative border rounded-lg p-4 mt-4 ${uploadStatus.status === 'processed'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                                }`}>
+                                <button
+                                    className="absolute top-0 right-0 mt-2 mr-2 text-lg font-bold"
+                                    onClick={handleCloseStatus}
+                                >
+                                    &times;
+                                </button>
+                                {uploadStatus.message}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+            <div className="flex-grow border rounded-lg overflow-auto">
                 {fileUrl && (
-                    fileType === 'txt' ? (
-                        <iframe
-                            src={fileUrl}
-                            className="w-full h-full border-none bg-white"
-                            title="Text Viewer"
-                        />
-                    ) : (
-                        <iframe
-                            src={fileUrl}
-                            className="w-full h-full border-none"
-                            title="PDF Viewer"
-                        />
-                    )
+                    <>
+                        <div className="border-b p-2 font-semibold">
+                            {uploadStatus?.filename}
+                        </div>
+                        {fileType === 'txt' ? (
+                            <iframe
+                                src={fileUrl}
+                                className="w-full h-full border-none bg-white"
+                                title="Text Viewer"
+                            />
+                        ) : (
+                            <iframe
+                                src={fileUrl}
+                                className="w-full h-full border-none"
+                                title="PDF Viewer"
+                            />
+                        )}
+                    </>
                 )}
             </div>
         </div>
