@@ -186,6 +186,7 @@ def remove_document(filename):
     try:
         os.remove(file_path)
         knowledge_base.delete_indices()
+        knowledge_base.setup_retriever()
         logger.info(f"File removed successfully: {filename}")
         return jsonify({"message": "File removed successfully", "status": "success"})
     except Exception as e:

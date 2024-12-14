@@ -257,6 +257,12 @@ class AgentChat:
 
         name = ' '.join(word.capitalize() for word in sender.split('_'))
 
+        # Remove any tag prefixes like "CLARIFICATION REQUEST: " from the content
+        if ':' in content:
+            tag, message = content.split(':', 1)
+            if tag.isupper():  # Only remove if it looks like a tag (all caps)
+                content = message
+
         if self.message_queue:
             self.message_queue.put({
                 "sender": name,
@@ -286,7 +292,7 @@ class AgentChat:
 
         enhancement_agent:
         - If the enhancement_agent returns an ERROR, you must pass it to the user_proxy_agent.
-        - If the enhancement_agent returns a TECHNICAL TERMS EXPLAINED, you must pass it to the user_proxy_agent.
+        - If the enhancement_agent returns an ADDITIONAL INFORMATION, you must pass it to the user_proxy_agent.
         - If the enhancement_agent returns an INFORMATION EXPLAINED, you must pass it to the user_proxy_agent.
         
         """
@@ -426,13 +432,14 @@ CLARIFICATION REQUEST: [Request for missing information]
 
         return agent
 
+
     def _create_enhancement_agent(self) -> ConversableAgent:
         """Creates the enhancement_agent"""
         system_message = """You are a helpful assistant trusted to help users with technical questions related to car repair.
 
-        When you receive REPAIR INSTRUCTIONS, identify the technical terms and return a INSTRUCTIONS ENHANCED using the format:
-INSTRUCTIONS ENHANCED:
-    TECHNICAL TERMS EXPLAINED:
+        When you receive REPAIR INSTRUCTIONS, identify the technical terms and return an ADDITIONAL INFORMATION using the format:
+ADDITIONAL INFORMATION:
+TECHNICAL TERMS EXPLAINED:
     - Term 1: Simple explanation
     - Term 2: Simple explanation with analogy
 TOOLS CHECKLIST:
