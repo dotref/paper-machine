@@ -33,7 +33,7 @@ export default function PdfViewer() {
         const handleDisplayFile = async (event: CustomEvent) => {
             const { filename, pageLabel } = event.detail;
             try {
-                const response = await fetch(`http://localhost:5000/uploads/${filename}`);
+                const response = await fetch(`http://localhost:5001/uploads/${filename}`);
                 if (!response.ok) throw new Error('Failed to fetch file');
                 
                 const blob = await response.blob();
