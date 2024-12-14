@@ -34,7 +34,7 @@ export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [token, setToken] = useState<string | null>(
-    localStorage.getItem("invitation_token") || ""
+    typeof window !== "undefined" ? localStorage.getItem("invitation_token") : null
   );
   const [isLoggedIn, setIsLoggedIn] = useState(false); // Only true after token validation
   const [error, setError] = useState<string | null>(null);
@@ -53,14 +53,16 @@ export default function ChatInterface() {
       setMessages((prev) => [...prev, systemMessage]);
     };
 
-    window.addEventListener("fileUploaded", handleFileUpload as EventListener);
+    if (typeof window !== "undefined") {
+      window.addEventListener("fileUploaded", handleFileUpload as EventListener);
 
-    return () => {
-      window.removeEventListener(
-        "fileUploaded",
-        handleFileUpload as EventListener
-      );
-    };
+      return () => {
+        window.removeEventListener(
+          "fileUploaded",
+          handleFileUpload as EventListener
+        );
+      };
+    }
   }, []);
 
   const validateToken = async () => {
@@ -77,13 +79,17 @@ export default function ChatInterface() {
 
       setIsLoggedIn(true);
       setError(null);
-      localStorage.setItem("invitation_token", token!);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("invitation_token", token!);
+      }
       alert("Login successful! You can now use the application.");
     } catch (err) {
       setError("Invalid token. Please re-enter your Invitation Token.");
       setIsLoggedIn(false);
       setToken("");
-      localStorage.removeItem("invitation_token");
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("invitation_token");
+      }
     }
   };
 
@@ -111,7 +117,7 @@ export default function ChatInterface() {
       setMessages((prev) => [...prev, userMessage]);
 
       try {
-        const apiToken = localStorage.getItem("invitation_token");
+        const apiToken = typeof window !== "undefined" ? localStorage.getItem("invitation_token") : null;
         if (!apiToken) {
           throw new Error("No token found. Please re-enter your Invitation Token.");
         }
@@ -231,6 +237,15 @@ export default function ChatInterface() {
                           variant="outline"
                           size="sm"
                           title={source.text}
+                          onClick={() => {
+                            const displayEvent = new CustomEvent("displayFile", {
+                              detail: {
+                                filename: source.file_name,
+                                pageLabel: source.page_label,
+                              },
+                            });
+                            window.dispatchEvent(displayEvent);
+                          }}
                         >
                           {source.file_name} - {source.page_label}
                         </Button>

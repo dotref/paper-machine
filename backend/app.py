@@ -10,14 +10,19 @@ import threading
 import json
 import atexit
 import pyprojroot
-
-root_dir = pyprojroot.here()
+from dotenv import load_dotenv  # For loading .env variables
+from werkzeug.utils import secure_filename
 
 # Import configurations
 from agents.agentic_rag import MultiDocumentRetrieval, AgentChat
 from utils import setup_logging, get_logger, timer
 from data_loader.parsers.parsers import PDFParser, TextParser, ImageParser
-from werkzeug.utils import secure_filename
+
+# Load environment variables
+load_dotenv()
+
+# Root directory
+root_dir = pyprojroot.here()
 
 # Add configurations
 UPLOAD_FOLDER = 'backend/uploads'
@@ -27,11 +32,12 @@ ALLOWED_EXTENSIONS = {'pdf', 'txt'}
 # Create uploads directory if it doesn't exist
 os.makedirs(os.path.join(root_dir, UPLOAD_FOLDER), exist_ok=True)
 
+# Helper function to check allowed file types
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Token Validation Setup
-VALID_TOKENS = {"sample-token-123", "another-token-456"}  # Replace with secure tokens
+VALID_TOKENS = set(os.getenv("INVITATION_TOKENS", "").split(","))  # Load tokens from .env
 
 def validate_token(token: str) -> bool:
     """
@@ -69,7 +75,8 @@ CORS(app, resources={
         "origins": [
             "http://localhost:3000",  # Frontend dev port
             "http://127.0.0.1:3000"
-        ]
+        ],
+        "allow_headers": ["Authorization", "Content-Type"],  # Allow Authorization header
     }
 })
 
