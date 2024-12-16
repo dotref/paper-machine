@@ -275,27 +275,25 @@ class AgentChat:
 
     def _create_group_chat_manager(self) -> GroupChatManager:
         system_message = """You are a helpful group chat manager. 
-        Your job is to forward messages between agents based on the flow below.
+Your job is to forward messages between agents based on the flow below.
 
-        user_proxy_agent:
-        - If the user_proxy_agent returns a QUESTION, you must pass it to the query_analyzer_agent.
+user_proxy_agent:
+- If the user_proxy_agent returns a QUESTION, you must pass it to the query_analyzer_agent.
 
-        query_analyzer_agent:
-        - If the query_analyzer_agent returns an ERROR, you must pass it to the user_proxy_agent.
-        - If the query_analyzer_agent returns a CLARIFICATION REQUEST, you must pass it to the user_proxy_agent.
-        - If the query_analyzer_agent returns a INFORMATION REQUEST, you must pass it to the enhancement_agent.
-        - If the query_analyzer_agent returns a INSTRUCTIONS REQUEST, you must pass it to the rag_agent.
+query_analyzer_agent:
+- If the query_analyzer_agent returns an ERROR, you must pass it to the user_proxy_agent.
+- If the query_analyzer_agent returns a CLARIFICATION REQUEST, you must pass it to the user_proxy_agent.
+- If the query_analyzer_agent returns a INFORMATION REQUEST, you must pass it to the enhancement_agent.
+- If the query_analyzer_agent returns a INSTRUCTIONS REQUEST, you must pass it to the rag_agent.
 
-        rag_agent:
-        - If the rag_agent returns an ERROR, you must pass it to the user_proxy_agent.
-        - If the rag_agent returns REPAIR INSTRUCTIONS, you must pass it to the enhancement_agent.
+rag_agent:
+- If the rag_agent returns an ERROR, you must pass it to the user_proxy_agent.
+- If the rag_agent returns REPAIR INSTRUCTIONS, you must pass it to the enhancement_agent.
 
-        enhancement_agent:
-        - If the enhancement_agent returns an ERROR, you must pass it to the user_proxy_agent.
-        - If the enhancement_agent returns an ADDITIONAL INFORMATION, you must pass it to the user_proxy_agent.
-        - If the enhancement_agent returns an INFORMATION EXPLAINED, you must pass it to the user_proxy_agent.
-        
-        """
+enhancement_agent:
+- If the enhancement_agent returns an ERROR, you must pass it to the user_proxy_agent.
+- If the enhancement_agent returns an ADDITIONAL INFORMATION, you must pass it to the user_proxy_agent.
+- If the enhancement_agent returns an INFORMATION EXPLAINED, you must pass it to the user_proxy_agent."""
         group_chat_manager = GroupChatManager(
             name="group_chat_manager",
             groupchat=self.group_chat,
@@ -318,22 +316,22 @@ class AgentChat:
 
     def _create_query_analyzer_agent(self) -> ConversableAgent:
         """Creates the query analysis agent"""
-        system_message = """You are a helpful assistant trusted to analyze users' car repair questions.
-        You must follow the below flow:
+        system_message = """You are a helpful assistant trusted to analyze users’ car repair questions.
+You must follow the below flow:
 
-        When you receive a QUESTION, you must determine whether the user is asking for information or repair instructions.
-        - If the user is asking for information, you must return an INFORMATION REQUEST using the format:
-INFORMATION REQUEST: [User's question]
-        - If the user is asking for repair instructions, you must first determine if you have all the information to construct an INSTRUCTIONS REQUEST.
-            - If you have all the information, you must return an INSTRUCTIONS REQUEST using the format:
+When you receive a QUESTION, you must determine whether the user is asking for information or repair instructions.
+- If the user is asking for information, you must return an INFORMATION REQUEST using the format:
+INFORMATION REQUEST: [User’s question]
+- If the user is asking for repair instructions, you must first determine if you have all the information to construct an INSTRUCTIONS REQUEST.
+    - If you have all the information, you must return an INSTRUCTIONS REQUEST using the format:
 INSTRUCTIONS REQUEST:
 - Part/System: [Specific part]
 - Task: [Detailed description of the problem/task]
-            - If you do not have all the information, you must return a CLARIFICATION REQUEST using the format:
-CLARIFICATION REQUEST: [Request for missing information]
+    - If you do not have all the information, you must return a CLARIFICATION REQUEST using the format:
+CLARIFICATION REQUEST: 
+[Request for missing information]
 
-        Return your response to the group_chat_manager only.
-        """
+Return your response to the group_chat_manager only."""
 
         agent = ConversableAgent(
             name="query_analyzer_agent",
@@ -361,15 +359,15 @@ CLARIFICATION REQUEST: [Request for missing information]
     def _create_rag_agent(self) -> ConversableAgent:
         """Creates the rag_agent"""
         system_message = """You handle knowledge base queries for car repair information.
-        When you receive a INSTRUCTIONS REQUEST, use the retrieved sources to generate repair instructions for the user's issue
+When you receive a INSTRUCTIONS REQUEST, use the retrieved sources to generate repair instructions for the user's issue
 
-        Always structure your response as:
+Always structure your response as:
 
-        REPAIR INSTRUCTIONS:
-        [Clear and concise formatted instructions]
+REPAIR INSTRUCTIONS:
+[Clear and concise formatted instructions]
 
-        Do NOT make up information or rely on general knowledge.
-        Return your response to the group_chat_manager only."""
+Do NOT make up information or rely on general knowledge.
+Return your response to the group_chat_manager only."""
 
         agent = ConversableAgent(
             name="rag_agent",
@@ -437,21 +435,22 @@ CLARIFICATION REQUEST: [Request for missing information]
         """Creates the enhancement_agent"""
         system_message = """You are a helpful assistant trusted to help users with technical questions related to car repair.
 
-        When you receive REPAIR INSTRUCTIONS, identify the technical terms and return an ADDITIONAL INFORMATION using the format:
+When you receive REPAIR INSTRUCTIONS, identify the technical terms and return an ADDITIONAL INFORMATION using the format:
 ADDITIONAL INFORMATION:
 TECHNICAL TERMS EXPLAINED:
     - Term 1: Simple explanation
     - Term 2: Simple explanation with analogy
 TOOLS CHECKLIST:
-[List of tools needed to complete the repair]
+[List of tools needed to complete the repair, if any]
+SAFETY PRECAUTIONS:
+[Safety precautions to take, if any]
         
-        When you receive an INFORMATION REQUEST, return an INFORMATION EXPLAINED using the format:
+When you receive an INFORMATION REQUEST, return an INFORMATION EXPLAINED using the format:
 INFORMATION EXPLAINED:
 - [User's question]
 - [Explanation of the information]
         
-        Return your response to the group_chat_manager only.
-        """
+Return your response to the group_chat_manager only."""
 
         agent = ConversableAgent(
             name="enhancement_agent",
