@@ -1,4 +1,5 @@
-# paper-machine
+# Hands-On Learning Machine
+# LLM Agents Final Project
 
 ## Setup
 
