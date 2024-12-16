@@ -1,5 +1,4 @@
-# Hands-On Learning Machine
-# LLM Agents Final Project
+# Hands-On Learning Machine: LLM Agents Final Project
 
 ## Setup
 
