@@ -9,6 +9,9 @@ venv/
 ENV/
 env/
 
+# documents
+assets/*
+
 # Embeddings
 *_embeddings/
 
