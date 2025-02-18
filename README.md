@@ -36,6 +36,10 @@ Naviagate to the `embedding_subsystem/pgvector` directory and run the command be
 docker-compose up -d
 ```
 
+On your web browser, navigate to the MinIO UI `localhost:9000` and create an access/secret key pair.
+
+In the .env file `embedding_subsystem/minio.env`, fill out `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` with your access/secret key pair.
+
 ### Backend
 
 Navigate to the `backend` directory and run the command below.
