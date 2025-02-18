@@ -14,7 +14,7 @@ export default function PdfViewer() {
     const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null)
     const [isUploading, setIsUploading] = useState(false)
     const [fileType, setFileType] = useState<'pdf' | 'txt' | null>(null)
-    const [uploadedFiles, setUploadedFiles] = useState<{ original: string, stored: string }[]>([]);
+    const [uploadedFiles, setUploadedFiles] = useState<{ stored: string }[]>([]);
     const [isUploadSectionVisible, setIsUploadSectionVisible] = useState(true);
     const [fileToRemove, setFileToRemove] = useState<string | null>(null);
 
@@ -81,11 +81,14 @@ export default function PdfViewer() {
     useEffect(() => {
         const fetchExistingFiles = async () => {
             try {
+                console.log('Fetching files from backend...');
                 const response = await fetch('http://localhost:5000/files');
                 if (!response.ok) throw new Error('Failed to fetch files');
                 
                 const data = await response.json();
-                setUploadedFiles(data.files);
+                console.log('Received files from backend:', data.files);
+                setUploadedFiles(data.files.map(file => ({ stored: file })));
+                console.log('Updated uploadedFiles state with:', data.files);
             } catch (error) {
                 console.error('Error fetching existing files:', error);
                 setUploadStatus({
@@ -117,11 +120,11 @@ export default function PdfViewer() {
                 const url = URL.createObjectURL(file)
                 setFileUrl(url)
                 setFileType(getFileType(file.name))
-                setUploadedFiles(prevFiles => [...prevFiles, { original: data.filename, stored: data.stored_filename }]);
+                setUploadedFiles(prevFiles => [...prevFiles, { stored: data.filename }]);
 
                 const uploadEvent = new CustomEvent('fileUploaded', {
                     detail: {
-                        filename: data.stored_filename,
+                        filename: data.filename,
                         status: 'success',
                         message: `Now viewing ${data.filename}`
                     }
@@ -268,7 +271,7 @@ export default function PdfViewer() {
                                                 className="text-blue-500 hover:text-blue-700 flex-grow text-left"
                                                 onClick={() => handleFileClick(file.stored)}
                                             >
-                                                {file.original}
+                                                {file.stored}
                                             </Button>
                                             <Button
                                                 variant="ghost"
@@ -330,11 +333,19 @@ export default function PdfViewer() {
                                 className="w-full h-full border-none bg-white"
                                 title="Text Viewer"
                             />
+                        ) : fileType === 'pdf' ? (
+                            <object
+                                data={fileUrl}
+                                type="application/pdf"
+                                className="w-full h-full"
+                            >
+                                <p>Unable to display PDF. <a href={fileUrl}>Download</a> instead.</p>
+                            </object>
                         ) : (
-                            <iframe
+                            <img
                                 src={fileUrl}
-                                className="w-full h-full border-none"
-                                title="PDF Viewer"
+                                alt={uploadStatus?.filename || 'Uploaded file'}
+                                className="max-w-full h-auto"
                             />
                         )}
                     </>

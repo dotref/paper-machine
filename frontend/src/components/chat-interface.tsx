@@ -32,7 +32,7 @@ const getUniqueSources = (sources: Source[]): Source[] => {
 export default function ChatInterface() {
     const [message, setMessage] = useState("")
     const [messages, setMessages] = useState<Message[]>([{
-        text: "Hello! I'm your DIY repair assistant. You can upload PDF or TXT files and ask me for help with your DIY projects.",
+        text: "Hello! I'm Paper Machine. You can upload PDF or TXT files to get started.",
         timestamp: new Date(),
         sender: 'System',
         response: 'success'

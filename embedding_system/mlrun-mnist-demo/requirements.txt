@@ -1,4 +1,0 @@
-minio
-tensorboard
-torch
-torchvision
