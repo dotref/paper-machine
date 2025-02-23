@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: testpwd
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - pg-data:/var/lib/postgresql/data
 
   pgadmin:
@@ -61,7 +61,7 @@ services:
       - MINIO_SECRET_KEY=minio_password
       - MINIO_SECURE=false
     volumes:
-      - .:/app
+      - ./src:/app/src
     depends_on:
       minio:
         condition: service_healthy

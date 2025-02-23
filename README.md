@@ -5,7 +5,7 @@
 Clone the repo, then follow the steps below.
 
 ### To bring up the services (Database and Backend) in the docker compose file.
-Naviagate to the `backend/src` directory and run the command below. Reload is on, so saved changes to the backend will automatically be applied (no need to rebuild)
+Naviagate to the `backend` directory and run the command below. Reload is on, so saved changes to the backend will automatically be applied (no need to rebuild)
 ```
 docker-compose up --build
 ```
@@ -17,7 +17,7 @@ Visit `localhost:9000` in your web browser and login using the credentials `mini
 ### First time MinIO setup
 On your web browser, navigate to the MinIO console `localhost:9000` and create an access/secret key pair.
 
-In the .env file `backend/src/minio.env`, fill out `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` with your access/secret key pair.
+In the .env file `backend/src/database/minio.env`, fill out `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` with your access/secret key pair.
 
 ### To access FastAPI console
 

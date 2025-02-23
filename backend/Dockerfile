@@ -24,4 +24,8 @@ RUN adduser --disabled-password --gecos '' appuser
 USER appuser
 
 # Run the application (CMD will be overridden in development)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
+# Copy source code
+COPY src/ /app/src/
+
+# Run the application
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import uvicorn
-from database.router import router as storage_router
+from .database.router import router as storage_router
 
 # Setup logging
 logging.basicConfig(
@@ -16,7 +16,7 @@ app = FastAPI(
     title="Paper Machine API",
     description="API for managing document storage and processing",
     version="1.0.0"
-)
+) 
 
 # Enable CORS
 app.add_middleware(
@@ -42,4 +42,4 @@ async def index():
     }
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
+    uvicorn.run("src.main:app", host="0.0.0.0", port=5000, reload=True)
