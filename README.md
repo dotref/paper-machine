@@ -4,55 +4,32 @@
 
 Clone the repo, then follow the steps below.
 
-### Set up a virtual environment
-To create a virual environment named '.venv' use the following command below. 
-
+### To bring up the services (Database and Backend) in the docker compose file.
+Naviagate to the `backend/src` directory and run the command below. Reload is on, so saved changes to the backend will automatically be applied (no need to rebuild)
 ```
-python -m venv .venv
-```
-
-To activate your new virtual environment on a Mac or Linux based machine use the following command.
-```
-source .venv/bin/activate
-```
-On Windows use:
-```
-source .venv/Scripts/activate
+docker-compose up --build
 ```
 
-To deactivate:
-```
-deactivate
-```
+### To access MinIO console
 
-To install all the packages in the requirements.txt file run the folling command once you have activated your virtual environment:
-```
-pip install -r requirements.txt
-```
+Visit `localhost:9000` in your web browser and login using the credentials `minio_user` and `minio_password`.
 
-### To bring up the containers in the docker compose file.
-Naviagate to the `embedding_subsystem/pgvector` directory and run the command below.
-```
-docker-compose up -d
-```
+### First time MinIO setup
+On your web browser, navigate to the MinIO console `localhost:9000` and create an access/secret key pair.
 
-On your web browser, navigate to the MinIO UI `localhost:9000` and create an access/secret key pair.
+In the .env file `backend/src/minio.env`, fill out `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` with your access/secret key pair.
 
-In the .env file `embedding_subsystem/minio.env`, fill out `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` with your access/secret key pair.
+### To access FastAPI console
 
-### Backend
+Visit `localhost:5000/docs` in your web browser. You may interact with the API endpoints in the console.
 
-Navigate to the `backend` directory and run the command below.
-
-```
-python3 app.py
-```
-
-### Frontend
+### To bring up the frontend
+NOTE: frontend is not integrated with the backend at this time.
 
 Open another terminal, navigate to the `frontend` directory, and run the commands below.
 
 ```
 npm i
+```
 npm run dev
 ```

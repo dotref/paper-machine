@@ -1,6 +1,0 @@
-fastapi
-python-multipart
-minio
-uvicorn
-python-dotenv
-pyprojroot
