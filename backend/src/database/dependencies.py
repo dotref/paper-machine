@@ -4,7 +4,7 @@ from minio.error import S3Error
 import os
 from functools import lru_cache
 import logging
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Any
 from pydantic import BaseModel
 import hashlib
 
@@ -24,9 +24,14 @@ class FileMetadata(BaseModel):
     # TODO: add other relevant metadata as needed
 
 class FileInfo(BaseModel):
-    file_data: Optional[str] = None
+    file: Optional[UploadFile] = None
+    file_length: Optional[int] = None
     object_key: str
     metadata: Optional[FileMetadata] = None
+
+class UploadInfo(BaseModel):
+    duplicate: bool
+    fileinfo: FileInfo
 
 @lru_cache()
 def get_minio_client() -> Minio:
@@ -75,7 +80,7 @@ async def validate_file(
 async def validate_upload(
     file: Annotated[UploadFile, Depends(validate_file)],
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
-) -> FileInfo:
+) -> UploadInfo:
     """
     Validates an uploaded file, including checking if it is a duplicate.
     Returns the relevant file content and metadata.
@@ -84,27 +89,37 @@ async def validate_upload(
     # Read file and compute hash
     file_data = await file.read()
     file_hash = hashlib.sha256(file_data).hexdigest()
+    file_length = len(file_data)
 
-    metadata = {
-        "file_name": file.filename,
-        "content_type": file.content_type,
-    }
+    await file.seek(0)
+
+    metadata = FileMetadata(
+        file_name=file.filename,
+        content_type=file.content_type
+    )
 
     # Check if file with same hash already exists
     try:
         minio_client.stat_object(BUCKET_NAME, file_hash)
-        return {
-            "object_key": file_hash,
-            "metadata": metadata
-        }
+        return UploadInfo(
+            duplicate=True,
+            fileinfo=FileInfo(
+                object_key=file_hash,
+                metadata=metadata
+            )
+        )
     except:
         pass
 
-    return {
-        "file_data": file_data,
-        "object_key": file_hash,
-        "metadata": metadata
-    }
+    return UploadInfo(
+        duplicate=False,
+        fileinfo=FileInfo(
+            file=file,
+            file_length=file_length,
+            object_key=file_hash,
+            metadata=metadata
+        )
+    )
 
 async def validate_object_key(
     object_key: str,
@@ -117,14 +132,13 @@ async def validate_object_key(
     """
     try:
         stat = minio_client.stat_object(BUCKET_NAME, object_key)
-        # NOTE: this is a little ugly, but that's how we can get the original metadata from stat
-        return {
-            "object_key": object_key,
-            "metadata": {
-                "file_name": stat.metadata["x-amz-meta-file_name"],
-                "content_type": stat.metadata["x-amz-meta-content_type"]
-            }
-        }
+        return FileInfo(
+            object_key=object_key,
+            metadata=FileMetadata(
+                file_name=stat.metadata.get("x-amz-meta-file_name", object_key),
+                content_type=stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
+            )
+        )
     except:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

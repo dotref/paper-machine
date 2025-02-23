@@ -1,11 +1,10 @@
 from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status
 from fastapi.responses import StreamingResponse
-import io
 from typing import List, Annotated
 from minio import Minio
 import logging
 from pydantic import BaseModel
-from .dependencies import BUCKET_NAME, FileInfo, validate_upload, validate_object_key, get_minio_client
+from .dependencies import BUCKET_NAME, FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -16,40 +15,50 @@ class Response(BaseModel):
 
 @router.post("/upload")
 async def upload_document(
-    fileinfo: Annotated[UploadFile, Depends(validate_upload)],
+    uploadinfo: Annotated[UploadFile, Depends(validate_upload)],
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
 ) -> Response:
     """Upload a document to MinIO storage"""
     logger.info("Upload endpoint triggered")
 
+    fileinfo = uploadinfo.fileinfo
+
     # File is a duplicate, no need to reupload
+    # TODO: in the scenario where multiple users try to upload the same file,
+    # we don't want to store the same file twice but we do want to make sure the
+    # user has access to the file with their credentials and metadata.
     # Return object key (hash) and metadata
-    if "file_data" not in fileinfo:
-        return {
-            "message": "File is a duplicate, no need to reupload",
-            "fileinfo": fileinfo
-        }
+    if uploadinfo.duplicate:
+        logger.info("File is a duplicate, no need to reupload")
+        return Response(
+            message="File uploaded successfully", # Abstract duplicate checking from user
+            fileinfo=fileinfo
+        )
     
     try:
         # Upload directly to MinIO using put_object
         minio_client.put_object(
             bucket_name=BUCKET_NAME,
-            object_name=fileinfo["object_key"],
-            data=io.BytesIO(fileinfo["file_data"]),
-            length=len(fileinfo["file_data"]),
-            content_type=fileinfo["metadata"]["content_type"],
-            metadata=fileinfo["metadata"]
+            object_name=fileinfo.object_key,
+            data=fileinfo.file.file,
+            length=fileinfo.file_length,
+            content_type=fileinfo.metadata.content_type,
+            metadata={
+                "file_name": fileinfo.metadata.file_name,
+                "content_type": fileinfo.metadata.content_type
+            }
         )
         
-        logger.info(f"File uploaded successfully: {fileinfo['metadata']['file_name']}")
+        logger.info(f"File uploaded successfully: {fileinfo.metadata.file_name}")
 
         # Don't return file data in response
-        del fileinfo["file_data"]
+        fileinfo.file = None
+        fileinfo.file_length = None
 
-        return {
-            "message": "File uploaded successfully",
-            "fileinfo": fileinfo
-        }
+        return Response(
+            message="File uploaded successfully",
+            fileinfo=fileinfo
+        )
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
         raise HTTPException(
@@ -63,21 +72,21 @@ async def remove_document(
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
 ) -> Response:
     """Remove a document from MinIO storage"""
-    logger.info(f"Remove endpoint triggered for object: {fileinfo['object_key']}")
+    logger.info(f"Remove endpoint triggered for object: {fileinfo.object_key}")
 
     try:
         # Remove the object
         minio_client.remove_object(
             BUCKET_NAME,
-            fileinfo["object_key"]
+            fileinfo.object_key
         )
 
-        logger.info(f"File removed successfully: {fileinfo['object_key']}")
+        logger.info(f"File removed successfully: {fileinfo.object_key}")
 
-        return {
-            "message": "File removed successfully",
-            "fileinfo": fileinfo
-        }
+        return Response(
+            message="File removed successfully",
+            fileinfo=fileinfo
+        )
     except Exception as e:
         logger.error(f"Error removing file: {str(e)}")
         raise HTTPException(
@@ -91,17 +100,17 @@ async def serve_file(
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
 ) -> StreamingResponse:
     """Serve a file from MinIO storage"""
-    logger.info(f"Serve endpoint triggered for object: {fileinfo['object_key']}")
+    logger.info(f"Serve endpoint triggered for object: {fileinfo.object_key}")
     try:
         # Get file data from MinIO
-        data = minio_client.get_object(BUCKET_NAME, fileinfo["object_key"])
+        data = minio_client.get_object(BUCKET_NAME, fileinfo.object_key)
         
         return StreamingResponse(
             data.stream(),
-            media_type=fileinfo["metadata"]["content_type"],
+            media_type=fileinfo.metadata.content_type,
             headers={
-                'Content-Disposition': f'inline; filename="{fileinfo["metadata"]["file_name"]}"',
-                'Content-Type': fileinfo["metadata"]["content_type"]
+                'Content-Disposition': f'inline; filename="{fileinfo.metadata.file_name}"',
+                'Content-Type': fileinfo.metadata.content_type
             }
         )
     except Exception as e:
@@ -127,14 +136,15 @@ async def list_files(
             # Get metadata for each object
             stat = minio_client.stat_object(BUCKET_NAME, obj.object_name)
             
-            # NOTE: this is a little ugly, but that's how we can get the original metadata from stat
-            files.append({
-                "object_key": obj.object_name,
-                "metadata": {
-                    "file_name": stat.metadata["x-amz-meta-file_name"],
-                    "content_type": stat.metadata["x-amz-meta-content_type"]
-                }
-            })
+            files.append(
+                FileInfo(
+                    object_key=obj.object_name,
+                    metadata=FileMetadata(
+                        file_name=stat.metadata.get("x-amz-meta-file_name", obj.object_name),
+                        content_type=stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
+                    )
+                )
+            )
         
         return files
     except Exception as e:
