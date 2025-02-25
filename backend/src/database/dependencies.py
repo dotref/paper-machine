@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import hashlib
 from .embedding_utils import upload_model_to_minio
 from .config import CUSTOM_CORPUS_BUCKET as BUCKET_NAME
+from .config import VALID_CONTENT_TYPES
 
 logger = logging.getLogger(__name__)
 
