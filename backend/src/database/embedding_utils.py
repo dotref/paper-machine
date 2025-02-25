@@ -13,43 +13,59 @@ from minio import Minio
 from minio.error import S3Error
 import psycopg2
 
-LOGGER_NAME = 'embedding_subsystem'
-LOGGING_LEVEL = logging.DEBUG
-LOGGER_FILE_PATH = 'embedding_logs.log'
+# LOGGER_NAME = 'embedding_subsystem'
+# LOGGING_LEVEL = logging.DEBUG
+# LOGGER_FILE_PATH = 'embedding_logs.log'
 
-load_dotenv('minio.env')
-MINIO_URL = os.environ['MINIO_URL']
-MINIO_ACCESS_KEY = os.environ['MINIO_ACCESS_KEY']
-MINIO_SECRET_KEY = os.environ['MINIO_SECRET_KEY']
-if os.environ['MINIO_SECURE']=='true': MINIO_SECURE = True 
-else: MINIO_SECURE = False 
-PGVECTOR_HOST = os.environ['PGVECTOR_HOST']
-PGVECTOR_DATABASE = os.environ['PGVECTOR_DATABASE']
-PGVECTOR_USER = os.environ['PGVECTOR_USER']
-PGVECTOR_PASSWORD = os.environ['PGVECTOR_PASSWORD']
-PGVECTOR_PORT = os.environ['PGVECTOR_PORT']
+# load_dotenv('minio.env')
+# MINIO_URL = os.environ['MINIO_URL']
+# MINIO_ACCESS_KEY = os.environ['MINIO_ACCESS_KEY']
+# MINIO_SECRET_KEY = os.environ['MINIO_SECRET_KEY']
+# if os.environ['MINIO_SECURE']=='true': MINIO_SECURE = True 
+# else: MINIO_SECURE = False 
+# PGVECTOR_HOST = os.environ['PGVECTOR_HOST']
+# PGVECTOR_DATABASE = os.environ['PGVECTOR_DATABASE']
+# PGVECTOR_USER = os.environ['PGVECTOR_USER']
+# PGVECTOR_PASSWORD = os.environ['PGVECTOR_PASSWORD']
+# PGVECTOR_PORT = os.environ['PGVECTOR_PORT']
+
+from .config import get_minio_settings, get_postgres_settings
+
+minio_settings = get_minio_settings()
+postgres_settings = get_postgres_settings() 
+
+MINIO_URL = minio_settings['url']
+MINIO_ACCESS_KEY = minio_settings['access_key']
+MINIO_SECRET_KEY = minio_settings['secret_key']
+MINIO_SECURE = minio_settings['secure']
+
+PGVECTOR_HOST = postgres_settings['host']
+PGVECTOR_DATABASE = postgres_settings['database']
+PGVECTOR_USER = postgres_settings['user']
+PGVECTOR_PASSWORD = postgres_settings['password']
+PGVECTOR_PORT = postgres_settings['port']
 
 
-def create_logger() -> logging.Logger:
-    logger = logging.getLogger(LOGGER_NAME)
+# def create_logger() -> logging.Logger:
+#     logger = logging.getLogger(LOGGER_NAME)
 
-    #if not logger.hasHandlers(): 
-    logger.setLevel(LOGGING_LEVEL)
-    formatter = logging.Formatter('%(process)s %(asctime)s | %(levelname)s | %(message)s')
+#     #if not logger.hasHandlers(): 
+#     logger.setLevel(LOGGING_LEVEL)
+#     formatter = logging.Formatter('%(process)s %(asctime)s | %(levelname)s | %(message)s')
 
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(logging.DEBUG)
-    stdout_handler.setFormatter(formatter)
+#     stdout_handler = logging.StreamHandler(sys.stdout)
+#     stdout_handler.setLevel(logging.DEBUG)
+#     stdout_handler.setFormatter(formatter)
 
-    file_handler = logging.FileHandler(LOGGER_FILE_PATH)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
+#     file_handler = logging.FileHandler(LOGGER_FILE_PATH)
+#     file_handler.setLevel(logging.DEBUG)
+#     file_handler.setFormatter(formatter)
 
-    logger.handlers = []
-    logger.addHandler(file_handler)
-    logger.addHandler(stdout_handler)
+#     logger.handlers = []
+#     logger.addHandler(file_handler)
+#     logger.addHandler(stdout_handler)
 
-    return logger
+#     return logger
 
 
 def upload_model_to_minio(bucket_name: str, full_model_name: str, revision: str) -> None:

@@ -60,6 +60,12 @@ services:
       - MINIO_ACCESS_KEY=minio_user
       - MINIO_SECRET_KEY=minio_password
       - MINIO_SECURE=false
+      - POSTGRES_HOST=pgvector
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=vectordb
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpwd
+      - POSTGRES_HOST_AUTH_METHOD=trust
     volumes:
       - ./src:/app/src
     depends_on:

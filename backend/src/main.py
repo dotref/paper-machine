@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import logging
 import uvicorn
 from .database.router import router as storage_router
+from .database.config import get_minio_settings, get_postgres_settings
 
 # Setup logging
 logging.basicConfig(
@@ -11,11 +13,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Starting up")
+    # Validate environment variables on startup
+    try:
+        minio_settings = get_minio_settings()
+        postgres_settings = get_postgres_settings()
+        logger.info("Successfully loaded MinIO and PostgreSQL configurations")
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        raise
+    
+    yield
+
+    logger.info("Shutting down")
+
 # Create FastAPI app
 app = FastAPI(
     title="Paper Machine API",
     description="API for managing document storage and processing",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 ) 
 
 # Enable CORS

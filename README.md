@@ -14,11 +14,6 @@ docker-compose up --build
 
 Visit `localhost:9000` in your web browser and login using the credentials `minio_user` and `minio_password`.
 
-### First time MinIO setup
-On your web browser, navigate to the MinIO console `localhost:9000` and create an access/secret key pair.
-
-In the .env file `backend/src/database/minio.env`, fill out `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` with your access/secret key pair.
-
 ### To access FastAPI console
 
 Visit `localhost:5000/docs` in your web browser. You may interact with the API endpoints in the console.

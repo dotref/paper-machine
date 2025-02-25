@@ -4,7 +4,8 @@ from typing import List, Annotated
 from minio import Minio
 import logging
 from pydantic import BaseModel
-from .dependencies import BUCKET_NAME, FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client
+from .dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client
+from .config import CUSTOM_CORPUS_BUCKET as BUCKET_NAME
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/storage", tags=["storage"])

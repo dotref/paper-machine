@@ -7,16 +7,10 @@ import logging
 from typing import Annotated, Optional, Any
 from pydantic import BaseModel
 import hashlib
+from .embedding_utils import upload_model_to_minio
+from .config import CUSTOM_CORPUS_BUCKET as BUCKET_NAME
 
 logger = logging.getLogger(__name__)
-
-BUCKET_NAME = "custom-corpus"
-VALID_CONTENT_TYPES = {
-    "application/pdf",
-    "text/plain",
-    "application/json"
-    # TODO: add more supported content types as needed
-}
 
 class FileMetadata(BaseModel):
     file_name: str
