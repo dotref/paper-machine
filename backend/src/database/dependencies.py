@@ -101,62 +101,6 @@ def get_pg_client() -> Any:
             detail=f"Postgres error: {str(e)}"
         )
 
-# def upload_model(
-#     embedding_model: str,
-#     embedding_model_revision: str = "latest",
-#     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
-# ) -> None:
-#     """
-#     Uploads a model to MinIO if it doesn't already exist.
-#     """
-#     try:
-#         # Check if model already exists in MinIO
-#         model_path = f"models--{embedding_model}--{embedding_model_revision}"
-#         objects = minio_client.list_objects(MODELS_BUCKET, prefix=f"{model_path}/snapshots/", recursive=True)
-        
-#         # Convert to list to check if there are any objects
-#         if len(list(objects)) > 0:
-#             logger.info(f"Model {embedding_model} already exists in MinIO")
-#             return
-            
-#         # Model doesn't exist, proceed with upload
-#         upload_model_to_minio(minio_client, MODELS_BUCKET, embedding_model, embedding_model_revision)
-#         logger.info(f"Uploaded model: {embedding_model}")
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to upload model: {str(e)}"
-#         )
-
-# def download_model(
-#     embedding_model: str,
-#     embedding_model_revision: str = "latest",
-#     minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
-# ) -> str:
-#     """
-#     Download a model from MinIO. Calls upload_model to check if the model exists in MinIO.
-#     Returns a local path to the downloaded model.
-#     """
-#     try:
-#         upload_model(embedding_model, embedding_model_revision)
-#         # Get the user name and the model name
-#         user_name, model_name = embedding_model.split('/')
-#         model_path_name = f'models--{user_name}--{model_name}'
-#         full_model_local_path = os.path.join(MODEL_CACHE_DIR, model_path_name, 'snapshots', embedding_model_revision)
-        
-#         # If model exists locally and directory is not empty, use it
-#         if os.path.exists(full_model_local_path) and any(os.scandir(full_model_local_path)):
-#             logger.info(f"Using locally cached model at {full_model_local_path}")
-#             return full_model_local_path
-            
-#         # Otherwise download from MinIO
-#         return download_model_from_minio(minio_client, MODELS_BUCKET, embedding_model, embedding_model_revision)
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to download model: {str(e)}"
-#         )
-
 async def validate_file(
     file: UploadFile
 ) -> UploadFile:

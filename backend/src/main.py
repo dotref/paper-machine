@@ -7,7 +7,6 @@ from .database.router import router as storage_router
 from .database.config import get_minio_settings, get_postgres_settings, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION, EMBED_ON
 from .database.dependencies import get_minio_client, get_pg_client
 from .database.embedding_utils import ensure_model_is_ready
-import sys
 
 # Setup logging
 logging.basicConfig(
