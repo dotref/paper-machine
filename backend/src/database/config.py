@@ -1,17 +1,27 @@
-from pathlib import Path
-from dotenv import load_dotenv
 import os
 import logging
+import tempfile
 
 logger = logging.getLogger(__name__)
 
-# Embedding model settings
+# Model cache settings
+MODEL_CACHE_DIR = os.path.join(tempfile.gettempdir(), 'hf-models')
+os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+
+# Embedding settings
+EMBED_ON = False
 EMBEDDING_MODEL = 'intfloat/multilingual-e5-small'
 EMBEDDING_MODEL_REVISION = 'ffdcc22a9a5c973ef0470385cef91e1ecb461d9f'
+BATCH_SIZE = 1
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 10
+DIMENSION = 384
 
 # MinIO settings
 MODELS_BUCKET = 'hf-models'
 CUSTOM_CORPUS_BUCKET = 'custom-corpus'
+
+MODEL_PATH = None  # Will be set during startup
 
 VALID_CONTENT_TYPES = {
     "application/pdf",

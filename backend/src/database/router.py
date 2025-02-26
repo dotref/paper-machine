@@ -1,11 +1,13 @@
-from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status
+from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
-from typing import List, Annotated
+from typing import List, Annotated, Any
 from minio import Minio
 import logging
 from pydantic import BaseModel
-from .dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client
+from .dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client, get_pg_client
+from .embedding_utils import process_document_embeddings
 from .config import CUSTOM_CORPUS_BUCKET as BUCKET_NAME
+from .config import EMBED_ON
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -16,10 +18,13 @@ class Response(BaseModel):
 
 @router.post("/upload")
 async def upload_document(
+    request: Request,
     uploadinfo: Annotated[UploadFile, Depends(validate_upload)],
-    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
+    background_tasks: BackgroundTasks,
+    minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
+    pgvector_client: Annotated[Any, Depends(get_pg_client)] = None
 ) -> Response:
-    """Upload a document to MinIO storage"""
+    """Upload a document to MinIO storage and start embedding creation in background"""
     logger.info("Upload endpoint triggered")
 
     fileinfo = uploadinfo.fileinfo
@@ -52,12 +57,33 @@ async def upload_document(
         
         logger.info(f"File uploaded successfully: {fileinfo.metadata.file_name}")
 
+        # Get model path from app state
+        if EMBED_ON:
+            model_path = request.app.state.model_path
+            if not model_path:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Model path not set in application state"
+                )
+
+            # Add embedding creation as background task
+            background_tasks.add_task(
+                process_document_embeddings,
+                minio_client=minio_client,
+                pgvector_client=pgvector_client,
+                bucket_name=BUCKET_NAME,
+                object_key=fileinfo.object_key,
+                model_path=model_path
+            )
+            
+            logger.info(f"Started background embedding creation for: {fileinfo.metadata.file_name}")
+
         # Don't return file data in response
         fileinfo.file = None
         fileinfo.file_length = None
 
         return Response(
-            message="File uploaded successfully",
+            message="File uploaded successfully, embeddings being generated in background",
             fileinfo=fileinfo
         )
     except Exception as e:

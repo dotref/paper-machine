@@ -6,3 +6,8 @@ python-dotenv==1.0.0
 pyprojroot==0.3.0
 huggingface-hub
 psycopg2-binary
+langchain
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.1.0+cpu
+torchvision==0.16.0+cpu
+sentence-transformers

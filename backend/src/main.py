@@ -4,30 +4,49 @@ from contextlib import asynccontextmanager
 import logging
 import uvicorn
 from .database.router import router as storage_router
-from .database.config import get_minio_settings, get_postgres_settings
+from .database.config import get_minio_settings, get_postgres_settings, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION, EMBED_ON
+from .database.dependencies import get_minio_client, get_pg_client
+from .database.embedding_utils import ensure_model_is_ready
+import sys
 
 # Setup logging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up")
-    # Validate environment variables on startup
+    """Startup and shutdown events"""
     try:
-        minio_settings = get_minio_settings()
-        postgres_settings = get_postgres_settings()
-        logger.info("Successfully loaded MinIO and PostgreSQL configurations")
-    except ValueError as e:
-        logger.error(f"Configuration error: {e}")
-        raise
-    
-    yield
+        # Validate settings
+        get_minio_settings()
+        get_postgres_settings()
+        logger.info("Settings validated")
 
-    logger.info("Shutting down")
+        # Initialize clients
+        minio_client = get_minio_client()  # should be cached
+        pg_client = get_pg_client()  # should be cached
+        
+        if EMBED_ON:
+            # Ensure model is ready
+            logger.info(f"Preparing model {EMBEDDING_MODEL}")
+            model_path = ensure_model_is_ready(minio_client, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION)
+            
+            # Set global model path
+            app.state.model_path = model_path
+            logger.info(f"Model ready at {model_path}")
+
+        yield
+    except Exception as e:
+        logger.error(f"Startup error: {e}")
+        raise
+    finally:
+        # Cleanup
+        if 'pg_client' in locals():
+            pg_client.close()
+        logger.info("Shutting down")
 
 # Create FastAPI app
 app = FastAPI(

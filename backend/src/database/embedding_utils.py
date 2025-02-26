@@ -1,85 +1,28 @@
+from fastapi import Depends, HTTPException, status
 import glob
 import logging
 import os
-from pathlib import Path
-import shutil
-import sys
-import tempfile
 from typing import Any, Dict, List, Tuple
-
-from dotenv import load_dotenv
 from huggingface_hub import snapshot_download
 from minio import Minio
 from minio.error import S3Error
 import psycopg2
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from sentence_transformers import SentenceTransformer
+from .config import MODEL_CACHE_DIR, MODELS_BUCKET, BATCH_SIZE, CHUNK_SIZE, CHUNK_OVERLAP, DIMENSION
 
-# LOGGER_NAME = 'embedding_subsystem'
-# LOGGING_LEVEL = logging.DEBUG
-# LOGGER_FILE_PATH = 'embedding_logs.log'
+logger = logging.getLogger(__name__)
 
-# load_dotenv('minio.env')
-# MINIO_URL = os.environ['MINIO_URL']
-# MINIO_ACCESS_KEY = os.environ['MINIO_ACCESS_KEY']
-# MINIO_SECRET_KEY = os.environ['MINIO_SECRET_KEY']
-# if os.environ['MINIO_SECURE']=='true': MINIO_SECURE = True 
-# else: MINIO_SECURE = False 
-# PGVECTOR_HOST = os.environ['PGVECTOR_HOST']
-# PGVECTOR_DATABASE = os.environ['PGVECTOR_DATABASE']
-# PGVECTOR_USER = os.environ['PGVECTOR_USER']
-# PGVECTOR_PASSWORD = os.environ['PGVECTOR_PASSWORD']
-# PGVECTOR_PORT = os.environ['PGVECTOR_PORT']
-
-from .config import get_minio_settings, get_postgres_settings
-
-minio_settings = get_minio_settings()
-postgres_settings = get_postgres_settings() 
-
-MINIO_URL = minio_settings['url']
-MINIO_ACCESS_KEY = minio_settings['access_key']
-MINIO_SECRET_KEY = minio_settings['secret_key']
-MINIO_SECURE = minio_settings['secure']
-
-PGVECTOR_HOST = postgres_settings['host']
-PGVECTOR_DATABASE = postgres_settings['database']
-PGVECTOR_USER = postgres_settings['user']
-PGVECTOR_PASSWORD = postgres_settings['password']
-PGVECTOR_PORT = postgres_settings['port']
-
-
-# def create_logger() -> logging.Logger:
-#     logger = logging.getLogger(LOGGER_NAME)
-
-#     #if not logger.hasHandlers(): 
-#     logger.setLevel(LOGGING_LEVEL)
-#     formatter = logging.Formatter('%(process)s %(asctime)s | %(levelname)s | %(message)s')
-
-#     stdout_handler = logging.StreamHandler(sys.stdout)
-#     stdout_handler.setLevel(logging.DEBUG)
-#     stdout_handler.setFormatter(formatter)
-
-#     file_handler = logging.FileHandler(LOGGER_FILE_PATH)
-#     file_handler.setLevel(logging.DEBUG)
-#     file_handler.setFormatter(formatter)
-
-#     logger.handlers = []
-#     logger.addHandler(file_handler)
-#     logger.addHandler(stdout_handler)
-
-#     return logger
-
-
-def upload_model_to_minio(bucket_name: str, full_model_name: str, revision: str) -> None:
+def upload_model_to_minio(
+    minio_client: Minio, 
+    bucket_name: str, 
+    full_model_name: str, 
+    revision: str
+) -> None:
     '''
     Download a model from Hugging Face and upload it to MinIO. This function will use
     the current systems temp directory to temporarily save the model. 
     '''
-
-    # Create a local directory for the model.
-    #home = str(Path.home())
-    temp_dir = tempfile.gettempdir()
-    base_path = f'{temp_dir}{os.sep}hf-models'
-    os.makedirs(base_path, exist_ok=True)
-
     # Get the user name and the model name.
     tmp = full_model_name.split('/') 
     user_name = tmp[0]
@@ -88,134 +31,143 @@ def upload_model_to_minio(bucket_name: str, full_model_name: str, revision: str)
     # The snapshot_download will use this pattern for the path name.
     model_path_name=f'models--{user_name}--{model_name}' 
     # The full path on the local drive. 
-    full_model_local_path = base_path + os.sep + model_path_name + os.sep + 'snapshots' + os.sep + revision 
+    full_model_local_path = os.path.join(MODEL_CACHE_DIR, model_path_name, 'snapshots', revision)
     # The path used by MinIO. 
     full_model_object_path = model_path_name + '/snapshots/' + revision
 
     print(f'Starting download from HF to {full_model_local_path}.')
-    snapshot_download(repo_id=full_model_name, revision=revision, cache_dir=base_path)
+    snapshot_download(repo_id=full_model_name, revision=revision, cache_dir=MODEL_CACHE_DIR)
 
     print('Uploading to MinIO.')
-    upload_local_directory_to_minio(full_model_local_path, bucket_name, full_model_object_path)
-    #shutil.rmtree(full_model_local_path)
+    upload_local_directory_to_minio(minio_client, full_model_local_path, bucket_name, full_model_object_path)
 
 
-def upload_local_directory_to_minio(local_path:str, bucket_name:str , minio_path:str) -> None:
+def upload_local_directory_to_minio(
+    minio_client: Minio, 
+    local_path:str, 
+    bucket_name:str , 
+    minio_path:str
+) -> None:
     assert os.path.isdir(local_path)
-
-    # Create client with access and secret key
-    client = Minio(MINIO_URL,
-                MINIO_ACCESS_KEY,  
-                MINIO_SECRET_KEY, 
-                secure=MINIO_SECURE)
 
     for local_file in glob.glob(local_path + '/**'):
         local_file = local_file.replace(os.sep, '/') # Replace \ with / on Windows
         if not os.path.isfile(local_file):
-            upload_local_directory_to_minio(local_file, bucket_name, minio_path + '/' + os.path.basename(local_file))
+            upload_local_directory_to_minio(minio_client, local_file, bucket_name, minio_path + '/' + os.path.basename(local_file))
         else:
             remote_path = os.path.join(minio_path, local_file[1 + len(local_path):])
             remote_path = remote_path.replace(os.sep, '/')  # Replace \ with / on Windows
-            client.fput_object(bucket_name, remote_path, local_file)
+            minio_client.fput_object(bucket_name, remote_path, local_file)
 
 
-def download_model_from_minio(bucket_name: str, full_model_name: str, revision: str) -> str:
-    # Create a local directory for the model.
-    #home = str(Path.home())
-    temp_dir = tempfile.gettempdir()
-    base_path = f'{temp_dir}{os.sep}hf-models'
-    os.makedirs(base_path, exist_ok=True)
-
+def download_model_from_minio(minio_client: Minio, bucket_name: str, full_model_name: str, revision: str) -> str:
     # Get the user name and the model name.
     tmp = full_model_name.split('/') 
     user_name = tmp[0]
     model_name = tmp[1]
 
-    # The snapshot_download will use this patter for the path name.
-    model_path_name=f'models--{user_name}--{model_name}' 
+    # The snapshot_download will use this pattern for the path name.
+    model_path_name = f'models--{user_name}--{model_name}' 
     # The full path on the local drive. 
-    full_model_local_path = base_path + os.sep + model_path_name + os.sep + 'snapshots' + os.sep + revision 
+    full_model_local_path = os.path.join(MODEL_CACHE_DIR, model_path_name, 'snapshots', revision)
     # The path used by MinIO. 
     full_model_object_path = model_path_name + '/snapshots/' + revision 
-    print(full_model_local_path)
 
-    # Create client with access and secret key
-    client = Minio(MINIO_URL,
-                MINIO_ACCESS_KEY,  
-                MINIO_SECRET_KEY, 
-                secure=MINIO_SECURE)
+    # Create the local directory if it doesn't exist
+    os.makedirs(full_model_local_path, exist_ok=True)
 
-    for obj in client.list_objects(bucket_name, prefix=full_model_object_path, recursive=True):
-        file_path = os.path.join(base_path, obj.object_name)
-        client.fget_object(bucket_name, obj.object_name, file_path)
+    # Download from MinIO
+    for obj in minio_client.list_objects(bucket_name, prefix=full_model_object_path, recursive=True):
+        file_path = os.path.join(MODEL_CACHE_DIR, obj.object_name)
+        # Ensure the parent directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        minio_client.fget_object(bucket_name, obj.object_name, file_path)
+    
     return full_model_local_path
 
 
-def get_object_list(bucket_name: str) -> List[str]:
+def ensure_model_is_ready(
+    minio_client: Minio,
+    full_model_name: str,
+    revision: str = "latest"
+) -> str:
     '''
-    Gets a list of objects from a bucket.
-    '''
-    logger = create_logger()
-
-    # Get data of an object.
-    try:
-        # Create client with access and secret key
-        client = Minio(MINIO_URL,  # host.docker.internal
-                    MINIO_ACCESS_KEY,  
-                    MINIO_SECRET_KEY, 
-                    secure=MINIO_SECURE)
-
-        object_list = []
-        objects = client.list_objects(bucket_name, recursive=True)
-        for obj in objects:
-            object_list.append(obj.object_name)
-    except S3Error as s3_err:
-        logger.error(f'S3 Error occurred: {s3_err}.')
-        raise s3_err
-    except Exception as err:
-        logger.error(f'Error occurred: {err}.')
-        raise err
-
-    return object_list
-
-
-def get_document_from_minio(bucket_name: str, object_name: str) -> str:
-    '''
-    Retrieves an object from MinIO, saves it in a temp file and retiurns the 
-    path to the temp file.
+    Ensures model is available locally, downloading from Hugging Face and caching in MinIO if needed.
+    Returns the local path to the model.
     '''
     try:
-        # Create client with access and secret key
-        client = Minio(MINIO_URL,  # host.docker.internal
-                    MINIO_ACCESS_KEY,  
-                    MINIO_SECRET_KEY, 
-                    secure=MINIO_SECURE)
-
-        # Generate a temp file.
-        temp_dir = tempfile.gettempdir()
-        temp_file = os.path.join(temp_dir, object_name)
-        # Save object to file.
-        client.fget_object(bucket_name, object_name, temp_file)
+        # Get the user name and the model name
+        user_name, model_name = full_model_name.split('/')
+        model_path_name = f'models--{user_name}--{model_name}'
+        full_model_local_path = os.path.join(MODEL_CACHE_DIR, model_path_name, 'snapshots', revision)
         
-    except S3Error as s3_err:
-        raise s3_err
-    except Exception as err:
-        raise err
+        # If model exists locally and directory is not empty, use it
+        if os.path.exists(full_model_local_path) and any(os.scandir(full_model_local_path)):
+            logger.info(f"Using locally cached model at {full_model_local_path}")
+            return full_model_local_path
+            
+        # Check MinIO
+        full_model_object_path = f"{model_path_name}/snapshots/{revision}"
+        objects = minio_client.list_objects(MODELS_BUCKET, prefix=full_model_object_path, recursive=True)
+        if len(list(objects)) > 0:
+            logger.info(f"Model {full_model_name} exists in MinIO, downloading to local cache")
+            return download_model_from_minio(minio_client, full_model_name, revision, full_model_local_path)
+            
+        # Not in MinIO or local, download from Hugging Face and cache in MinIO
+        logger.info(f"Downloading model {full_model_name} from Hugging Face")
+        upload_model_to_minio(minio_client, MODELS_BUCKET, full_model_name, revision)
+        
+        return full_model_local_path
+        
+    except Exception as e:
+        logger.error(f"Error ensuring model is ready: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to prepare model: {str(e)}"
+        )
 
-    return temp_file
+
+def create_embeddings(
+    model_path: str, 
+    text: str, 
+    chunk_size: int = CHUNK_SIZE, 
+    chunk_overlap: int = CHUNK_OVERLAP
+) -> Tuple[List[str], List[List[float]]]:
+    '''
+    This function will create embeddings for a given file using a model.
+    Returns a tuple of (chunks, embeddings)
+    '''
+    # Load the model
+    model = SentenceTransformer(model_path)
+    
+    # Create text splitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len,
+    )
+    
+    # Split text into chunks
+    chunks = text_splitter.split_text(text)
+    
+    # Generate embeddings
+    embeddings = model.encode(chunks, batch_size=BATCH_SIZE).tolist()
+    
+    logger.info(f"Created {len(chunks)} embeddings")
+    return chunks, embeddings
 
 
-def save_embeddings_to_vectordb(chunks, embeddings) -> None:
+def save_embeddings_to_vectordb(
+    pgvector_client: Any, 
+    chunks: List[str], 
+    embeddings: List[List[float]]
+) -> None:
     '''
     This function will write an embeeding along with the embeddings text
     to the vector db.
     '''
-
     try:
-        connection = psycopg2.connect(host=PGVECTOR_HOST, database=PGVECTOR_DATABASE, 
-                                      user=PGVECTOR_USER, password=PGVECTOR_PASSWORD, 
-                                      port=PGVECTOR_PORT)
-        cursor = connection.cursor()
+        cursor = pgvector_client.cursor()
     
     except (Exception, psycopg2.Error) as error:
         print("Error while connecting", error)
@@ -226,11 +178,45 @@ def save_embeddings_to_vectordb(chunks, embeddings) -> None:
                 "INSERT INTO embeddings (embedding, text) VALUES (%s, %s)",
                 (embedding, text)
             )
-        connection.commit()
+        pgvector_client.commit()
     except (Exception, psycopg2.Error) as error:
         print("Error while writing to DB", error)
     finally:
         if cursor:
             cursor.close()
-        if connection:
-            connection.close()
+
+async def process_document_embeddings(
+    minio_client: Minio,
+    pgvector_client: Any,
+    bucket_name: str,
+    object_key: str,
+    model_path: str,
+) -> None:
+    '''
+    Background task to process document embeddings:
+    1. Stream document from MinIO
+    2. Create embeddings in chunks
+    3. Save embeddings to vector database
+    '''
+    try:
+        logger.info(f"Starting embedding creation for document {object_key}")
+        
+        # Get document content from MinIO
+        data = minio_client.get_object(bucket_name, object_key)
+        
+        text = data.read().decode('utf-8')
+        
+        # Create embeddings
+        chunks, embeddings = create_embeddings(model_path, text)
+        
+        # Save to vector database
+        save_embeddings_to_vectordb(pgvector_client, chunks, embeddings)
+        
+        logger.info(f"Successfully processed embeddings for {object_key}")
+        
+    except Exception as e:
+        logger.error(f"Error processing embeddings for {object_key}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing embeddings for {object_key}: {str(e)}"
+        )
