@@ -165,8 +165,8 @@ export default function ChatInterface() {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100vh-2rem)] border rounded-lg p-4">
-            <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col w-full h-full border rounded-lg">
+            <div className="flex justify-between items-center p-4 border-b">
                 <h2 className="text-lg font-semibold">Chat</h2>
                 <Button 
                     variant="outline"
@@ -176,7 +176,9 @@ export default function ChatInterface() {
                     Select Files
                 </Button>
             </div>
-            <div className="flex-grow overflow-y-auto mb-4 space-y-4">
+            
+            {/* Message list - make it flex-grow to take available space */}
+            <div className="flex-grow overflow-y-auto p-4 space-y-4">
                 {messages.map((msg, index) => (
                     <div 
                         key={index} 
@@ -224,18 +226,22 @@ export default function ChatInterface() {
                     </div>
                 ))}
             </div>
-            <form onSubmit={handleSubmit} className="flex gap-2">
-                <Input
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-grow"
-                    disabled={isLoading}
-                />
-                <Button type="submit" disabled={isLoading}>
-                    {isLoading ? 'Sending...' : 'Send'}
-                </Button>
-            </form>
+            
+            {/* Input area - fixed at bottom */}
+            <div className="p-4 border-t">
+                <form onSubmit={handleSubmit} className="flex gap-2">
+                    <Input
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="Type your message..."
+                        className="flex-grow"
+                        disabled={isLoading}
+                    />
+                    <Button type="submit" disabled={isLoading}>
+                        {isLoading ? 'Sending...' : 'Send'}
+                    </Button>
+                </form>
+            </div>
             
             {/* Files selection modal */}
             <SelectFilesModal 

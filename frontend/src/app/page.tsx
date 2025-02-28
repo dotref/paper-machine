@@ -13,10 +13,10 @@ export default function Home() {
         <MainLayout selectedTab={selectedTab} onSelectTab={setSelectedTab}>
             {selectedTab === "chat" ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
-                    <div className="h-full">
+                    <div className="h-full flex overflow-hidden">
                         <ChatInterface />
                     </div>
-                    <div className="h-full">
+                    <div className="h-full flex overflow-hidden">
                         <PdfViewer />
                     </div>
                 </div>

@@ -154,38 +154,42 @@ export default function PdfViewer() {
     };
 
     return (
-        <div className="flex flex-col h-full space-y-4">
-            <div className="flex-grow border rounded-lg overflow-auto">
-                {fileUrl && (
-                    <>
-                        <div className="border-b p-2 font-semibold">
-                            {uploadStatus?.filename}
-                        </div>
-                        {fileType === 'txt' ? (
-                            <iframe
-                                src={fileUrl}
-                                className="w-full h-full border-none bg-white"
-                                title="Text Viewer"
-                            />
-                        ) : fileType === 'pdf' ? (
-                            <object
-                                data={fileUrl}
-                                type="application/pdf"
-                                className="w-full h-full"
-                            >
-                                <p>Unable to display PDF. <a href={fileUrl}>Download</a> instead.</p>
-                            </object>
-                        ) : (
+        <div className="flex flex-col w-full h-full border rounded-lg">
+            <div className="border-b p-3 font-semibold">
+                {uploadStatus?.filename || "Document Viewer"}
+            </div>
+            
+            {/* Viewer area - takes all available space */}
+            <div className="flex-grow relative overflow-hidden">
+                {fileUrl ? (
+                    fileType === 'txt' ? (
+                        <iframe
+                            src={fileUrl}
+                            className="absolute inset-0 w-full h-full border-none bg-white"
+                            title="Text Viewer"
+                        />
+                    ) : fileType === 'pdf' ? (
+                        <object
+                            data={fileUrl}
+                            type="application/pdf"
+                            className="absolute inset-0 w-full h-full"
+                        >
+                            <p>Unable to display PDF. <a href={fileUrl}>Download</a> instead.</p>
+                        </object>
+                    ) : (
+                        <div className="absolute inset-0 flex items-center justify-center">
                             <Image
                                 src={fileUrl}
                                 alt={uploadStatus?.filename || 'Uploaded file'}
-                                layout="responsive"
-                                width={700}
-                                height={475}
-                                className="max-w-full h-auto"
+                                layout="fill"
+                                objectFit="contain"
                             />
-                        )}
-                    </>
+                        </div>
+                    )
+                ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                        <p>No document selected</p>
+                    </div>
                 )}
             </div>
         </div>
