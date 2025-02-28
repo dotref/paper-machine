@@ -19,6 +19,7 @@ type Item = FileItem | FolderItem;
 export default function FileManager() {
     const [items, setItems] = useState<Item[]>([]);
     const [currentPath, setCurrentPath] = useState<string[]>([]);
+    const [currentItems, setCurrentItems] = useState<Item[]>([]);
     const [fileToRemove, setFileToRemove] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState("");
     const [isUploading, setIsUploading] = useState(false);
@@ -53,6 +54,38 @@ export default function FileManager() {
         fetchFiles();
     }, []);
 
+    // Filter items based on current path
+    useEffect(() => {
+        if (currentPath.length === 0) {
+            // At root level, show all items from root
+            setCurrentItems(items);
+        } else {
+            // Find the folder at the current path
+            let currentFolder: FolderItem | null = null;
+            let tempItems = [...items];
+
+            // Navigate through the path
+            for (const folderName of currentPath) {
+                const folder = tempItems.find(
+                    item => item.type === 'folder' && item.name === folderName
+                ) as FolderItem | undefined;
+                
+                if (!folder) {
+                    // If folder doesn't exist, reset to root
+                    setCurrentPath([]);
+                    return;
+                }
+                
+                currentFolder = folder;
+                tempItems = currentFolder.files || [];
+            }
+            
+            if (currentFolder) {
+                setCurrentItems(currentFolder.files || []);
+            }
+        }
+    }, [currentPath, items]);
+
     const handleNewFileClick = () => {
         fileInputRef.current?.click();
     };
@@ -69,11 +102,20 @@ export default function FileManager() {
             });
             const data = await response.json();
             if (response.ok) {
-                // Add the new file to our items state
-                setItems(prev => [
-                    ...prev, 
-                    { name: data.filename, type: 'file' }
-                ]);
+                const newFile: FileItem = { 
+                    name: data.filename, 
+                    type: 'file' 
+                };
+                
+                if (currentPath.length === 0) {
+                    // Add file to root
+                    setItems(prev => [...prev, newFile]);
+                } else {
+                    // Add file to current folder
+                    const updatedItems = addFileToFolder(items, currentPath, newFile);
+                    setItems(updatedItems);
+                }
+                
                 setStatusMessage(`New file "${data.filename}" added.`);
             } else {
                 setStatusMessage(data.message || 'Upload failed');
@@ -84,6 +126,23 @@ export default function FileManager() {
         } finally {
             setIsUploading(false);
         }
+    };
+
+    // Helper function to add a file to a nested folder
+    const addFileToFolder = (items: Item[], path: string[], newFile: FileItem): Item[] => {
+        if (path.length === 0) return [...items, newFile];
+        
+        return items.map(item => {
+            if (item.type === 'folder' && item.name === path[0]) {
+                return {
+                    ...item,
+                    files: path.length === 1 
+                        ? [...item.files, newFile] 
+                        : addFileToFolder(item.files, path.slice(1), newFile)
+                };
+            }
+            return item;
+        });
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,16 +163,41 @@ export default function FileManager() {
     const createFolder = () => {
         if (!newFolderName.trim()) return;
         
-        // Create a new folder in our items state
+        // Create a new folder
         const newFolder: FolderItem = {
             name: newFolderName,
             type: 'folder',
             files: []
         };
+
+        if (currentPath.length === 0) {
+            // Add folder to root
+            setItems(prev => [...prev, newFolder]);
+        } else {
+            // Add folder to the current path
+            const updatedItems = addFolderToPath(items, currentPath, newFolder);
+            setItems(updatedItems);
+        }
         
-        setItems(prev => [...prev, newFolder]);
         setStatusMessage(`Folder "${newFolderName}" created successfully.`);
         setIsFolderModalOpen(false);
+    };
+
+    // Helper function to add a folder to a nested path
+    const addFolderToPath = (items: Item[], path: string[], newFolder: FolderItem): Item[] => {
+        if (path.length === 0) return [...items, newFolder];
+        
+        return items.map(item => {
+            if (item.type === 'folder' && item.name === path[0]) {
+                return {
+                    ...item,
+                    files: path.length === 1 
+                        ? [...item.files, newFolder] 
+                        : addFolderToPath(item.files, path.slice(1), newFolder)
+                };
+            }
+            return item;
+        });
     };
 
     const confirmRemove = (itemName: string) => {
@@ -125,23 +209,21 @@ export default function FileManager() {
     };
 
     const removeItem = async (itemName: string) => {
-        // Find the item to remove
-        const itemToRemove = items.find(item => item.name === itemName);
+        const itemToRemove = currentItems.find(item => item.name === itemName);
         
         if (!itemToRemove) {
             setStatusMessage("Item not found");
             return;
         }
         
-        if (itemToRemove.type === 'file') {
-            // Delete file from backend
+        if (itemToRemove.type === 'file' && currentPath.length === 0) {
+            // Only delete files from backend if they're at the root level
             try {
                 const response = await fetch(`http://localhost:5000/remove/${itemName}`, {
                     method: 'DELETE',
                 });
                 const data = await response.json();
                 if (response.ok) {
-                    // Remove from our items state
                     setItems(prev => prev.filter(item => item.name !== itemName));
                     setStatusMessage("File removed successfully");
                 } else {
@@ -152,17 +234,76 @@ export default function FileManager() {
                 setStatusMessage("Error removing file");
             }
         } else {
-            // Just remove folder from frontend state
-            setItems(prev => prev.filter(item => item.name !== itemName));
-            setStatusMessage("Folder removed successfully");
+            // Remove item from the current path
+            const updatedItems = removeItemFromPath(items, currentPath, itemName);
+            setItems(updatedItems);
+            setStatusMessage(`${itemToRemove.type === 'file' ? 'File' : 'Folder'} removed successfully`);
         }
         
         setFileToRemove(null);
     };
 
+    // Helper function to remove an item from a nested path
+    const removeItemFromPath = (items: Item[], path: string[], itemName: string): Item[] => {
+        if (path.length === 0) {
+            return items.filter(item => item.name !== itemName);
+        }
+        
+        return items.map(item => {
+            if (item.type === 'folder' && item.name === path[0]) {
+                return {
+                    ...item,
+                    files: path.length === 1 
+                        ? item.files.filter(file => file.name !== itemName)
+                        : removeItemFromPath(item.files, path.slice(1), itemName)
+                };
+            }
+            return item;
+        });
+    };
+
+    // Handle entering a folder
+    const enterFolder = (folderName: string) => {
+        setCurrentPath([...currentPath, folderName]);
+    };
+
+    // Handle navigating to a specific path level
+    const navigateToPath = (index: number) => {
+        setCurrentPath(currentPath.slice(0, index + 1));
+    };
+
     return (
         <div className="p-4">
-            <h2 className="text-2xl font-bold mb-4">Home</h2>
+            {/* Title with breadcrumb navigation */}
+            <div className="flex items-center flex-wrap mb-4">
+                <h2 className="text-2xl font-bold">
+                    <button 
+                        onClick={() => setCurrentPath([])}
+                        className="hover:text-blue-600 transition-colors duration-200"
+                    >
+                        Home
+                    </button>
+                </h2>
+                {currentPath.length > 0 && (
+                    <div className="flex items-center gap-1 ml-2">
+                        <span className="text-gray-500">/</span>
+                        {currentPath.map((folder, index) => (
+                            <React.Fragment key={index}>
+                                <button 
+                                    className={`${index === currentPath.length - 1 ? 'font-semibold' : 'hover:text-blue-600'} transition-colors duration-200`}
+                                    onClick={() => navigateToPath(index)}
+                                >
+                                    {folder}
+                                </button>
+                                {index < currentPath.length - 1 && (
+                                    <span className="text-gray-500">/</span>
+                                )}
+                            </React.Fragment>
+                        ))}
+                    </div>
+                )}
+            </div>
+
             <div className="flex gap-2 mb-4">
                 <Button onClick={handleNewFileClick} disabled={isUploading}>
                     New File
@@ -179,11 +320,15 @@ export default function FileManager() {
                 />
             </div>
             
-            {items.length === 0 ? (
-                <p className="text-gray-500">Your files will appear here.</p>
+            {currentItems.length === 0 ? (
+                <p className="text-gray-500">
+                    {currentPath.length === 0 
+                        ? "Your files will appear here." 
+                        : "This folder is empty."}
+                </p>
             ) : (
                 <ul className="space-y-2">
-                    {items.map((item, index) => (
+                    {currentItems.map((item, index) => (
                         <li key={index} className="flex flex-col border p-2 rounded-lg">
                             <div className="flex justify-between items-center">
                                 {item.type === 'file' ? (
@@ -204,6 +349,7 @@ export default function FileManager() {
                                 ) : (
                                     <span 
                                         className="text-yellow-600 cursor-pointer flex items-center"
+                                        onClick={() => enterFolder(item.name)}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                                             <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
