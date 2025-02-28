@@ -4,14 +4,14 @@ import { FolderDialog } from "./folder-dialog";
 
 // Define types for files and folders
 interface FileItem {
-  name: string;
-  type: 'file';
+    name: string;
+    type: 'file';
 }
 
 interface FolderItem {
-  name: string;
-  type: 'folder';
-  files: FileItem[];
+    name: string;
+    type: 'folder';
+    files: FileItem[];
 }
 
 type Item = FileItem | FolderItem;
@@ -38,13 +38,13 @@ export default function FileManager() {
                 const response = await fetch('http://localhost:5000/files');
                 if (!response.ok) throw new Error('Failed to fetch files');
                 const data = await response.json();
-                
+
                 // Convert string array to FileItem array
                 const fileItems: FileItem[] = data.files.map((filename: string) => ({
                     name: filename,
                     type: 'file'
                 }));
-                
+
                 setItems(fileItems);
             } catch (error) {
                 console.error('Error fetching files:', error);
@@ -69,17 +69,17 @@ export default function FileManager() {
                 const folder = tempItems.find(
                     item => item.type === 'folder' && item.name === folderName
                 ) as FolderItem | undefined;
-                
+
                 if (!folder) {
                     // If folder doesn't exist, reset to root
                     setCurrentPath([]);
                     return;
                 }
-                
+
                 currentFolder = folder;
                 tempItems = currentFolder.files || [];
             }
-            
+
             if (currentFolder) {
                 setCurrentItems(currentFolder.files || []);
             }
@@ -102,11 +102,11 @@ export default function FileManager() {
             });
             const data = await response.json();
             if (response.ok) {
-                const newFile: FileItem = { 
-                    name: data.filename, 
-                    type: 'file' 
+                const newFile: FileItem = {
+                    name: data.filename,
+                    type: 'file'
                 };
-                
+
                 if (currentPath.length === 0) {
                     // Add file to root
                     setItems(prev => [...prev, newFile]);
@@ -115,7 +115,7 @@ export default function FileManager() {
                     const updatedItems = addFileToFolder(items, currentPath, newFile);
                     setItems(updatedItems);
                 }
-                
+
                 setStatusMessage(`New file "${data.filename}" added.`);
             } else {
                 setStatusMessage(data.message || 'Upload failed');
@@ -131,13 +131,13 @@ export default function FileManager() {
     // Helper function to add a file to a nested folder
     const addFileToFolder = (items: Item[], path: string[], newFile: FileItem): Item[] => {
         if (path.length === 0) return [...items, newFile];
-        
+
         return items.map(item => {
             if (item.type === 'folder' && item.name === path[0]) {
                 return {
                     ...item,
-                    files: path.length === 1 
-                        ? [...item.files, newFile] 
+                    files: path.length === 1
+                        ? [...item.files, newFile]
                         : addFileToFolder(item.files, path.slice(1), newFile)
                 };
             }
@@ -162,7 +162,7 @@ export default function FileManager() {
 
     const createFolder = () => {
         if (!newFolderName.trim()) return;
-        
+
         // Create a new folder
         const newFolder: FolderItem = {
             name: newFolderName,
@@ -178,7 +178,7 @@ export default function FileManager() {
             const updatedItems = addFolderToPath(items, currentPath, newFolder);
             setItems(updatedItems);
         }
-        
+
         setStatusMessage(`Folder "${newFolderName}" created successfully.`);
         setIsFolderModalOpen(false);
     };
@@ -186,13 +186,13 @@ export default function FileManager() {
     // Helper function to add a folder to a nested path
     const addFolderToPath = (items: Item[], path: string[], newFolder: FolderItem): Item[] => {
         if (path.length === 0) return [...items, newFolder];
-        
+
         return items.map(item => {
             if (item.type === 'folder' && item.name === path[0]) {
                 return {
                     ...item,
-                    files: path.length === 1 
-                        ? [...item.files, newFolder] 
+                    files: path.length === 1
+                        ? [...item.files, newFolder]
                         : addFolderToPath(item.files, path.slice(1), newFolder)
                 };
             }
@@ -210,12 +210,12 @@ export default function FileManager() {
 
     const removeItem = async (itemName: string) => {
         const itemToRemove = currentItems.find(item => item.name === itemName);
-        
+
         if (!itemToRemove) {
             setStatusMessage("Item not found");
             return;
         }
-        
+
         if (itemToRemove.type === 'file' && currentPath.length === 0) {
             // Only delete files from backend if they're at the root level
             try {
@@ -239,7 +239,7 @@ export default function FileManager() {
             setItems(updatedItems);
             setStatusMessage(`${itemToRemove.type === 'file' ? 'File' : 'Folder'} removed successfully`);
         }
-        
+
         setFileToRemove(null);
     };
 
@@ -248,12 +248,12 @@ export default function FileManager() {
         if (path.length === 0) {
             return items.filter(item => item.name !== itemName);
         }
-        
+
         return items.map(item => {
             if (item.type === 'folder' && item.name === path[0]) {
                 return {
                     ...item,
-                    files: path.length === 1 
+                    files: path.length === 1
                         ? item.files.filter(file => file.name !== itemName)
                         : removeItemFromPath(item.files, path.slice(1), itemName)
                 };
@@ -277,7 +277,7 @@ export default function FileManager() {
             {/* Title with breadcrumb navigation */}
             <div className="flex items-center flex-wrap mb-4">
                 <h2 className="text-2xl font-bold">
-                    <button 
+                    <button
                         onClick={() => setCurrentPath([])}
                         className="hover:text-blue-600 transition-colors duration-200"
                     >
@@ -289,7 +289,7 @@ export default function FileManager() {
                         <span className="text-gray-500">/</span>
                         {currentPath.map((folder, index) => (
                             <React.Fragment key={index}>
-                                <button 
+                                <button
                                     className={`${index === currentPath.length - 1 ? 'font-semibold' : 'hover:text-blue-600'} transition-colors duration-200`}
                                     onClick={() => navigateToPath(index)}
                                 >
@@ -306,7 +306,7 @@ export default function FileManager() {
 
             <div className="flex gap-2 mb-4">
                 <Button onClick={handleNewFileClick} disabled={isUploading}>
-                    New File
+                    Upload File
                 </Button>
                 <Button onClick={toggleFolderModal}>
                     New Folder
@@ -319,12 +319,13 @@ export default function FileManager() {
                     className="hidden"
                 />
             </div>
-            
+
             {currentItems.length === 0 ? (
                 <p className="text-gray-500">
-                    {currentPath.length === 0 
-                        ? "Your files will appear here." 
-                        : "This folder is empty."}
+                    {currentPath.length === 0
+                        ? <i>Your files will appear here.</i>
+                        : <i>This folder is empty.</i>
+                        }
                 </p>
             ) : (
                 <ul className="space-y-2">
@@ -347,7 +348,7 @@ export default function FileManager() {
                                         {item.name}
                                     </span>
                                 ) : (
-                                    <span 
+                                    <span
                                         className="text-yellow-600 cursor-pointer flex items-center"
                                         onClick={() => enterFolder(item.name)}
                                     >
@@ -375,15 +376,15 @@ export default function FileManager() {
                     ))}
                 </ul>
             )}
-            
+
             {statusMessage && (
                 <div className="mt-4 p-2 border rounded-lg text-center text-sm text-gray-700">
                     {statusMessage}
                 </div>
             )}
-            
+
             {/* Folder creation dialog */}
-            <FolderDialog 
+            <FolderDialog
                 open={isFolderModalOpen}
                 handleOpen={toggleFolderModal}
                 folderName={newFolderName}
