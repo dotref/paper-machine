@@ -7,7 +7,7 @@ import PdfViewer from "@/components/chat-page/pdf-viewer";
 import FileManager from "@/components/home-page/file-manager";
 
 export default function Home() {
-    const [selectedTab, setSelectedTab] = useState("");
+    const [selectedTab, setSelectedTab] = useState("home");
 
     return (
         <MainLayout selectedTab={selectedTab} onSelectTab={setSelectedTab}>

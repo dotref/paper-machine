@@ -15,7 +15,7 @@ interface SidebarProps {
 export function Sidebar({ selectedTab, onSelectTab }: SidebarProps) {
     return (
         <Card
-            className="h-[calc(100vh-2rem)] w-full max-w-[20rem] p-4 shadow-xl shadow-blue-gray-900/5"
+            className="h-[calc(100vh-2rem)] w-full max-w-[25rem] p-4 shadow-xl shadow-blue-gray-900/5"
             placeholder=""
             onPointerEnterCapture={() => { }}
             onPointerLeaveCapture={() => { }}
