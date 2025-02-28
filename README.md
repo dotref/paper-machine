@@ -38,5 +38,6 @@ Open another terminal, navigate to the `frontend` directory, and run the command
 ```
 npm i
 ```
+```
 npm run dev
 ```
