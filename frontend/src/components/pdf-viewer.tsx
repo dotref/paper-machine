@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
+import Image from 'next/image'
 
 interface UploadStatus {
     filename: string;
@@ -342,9 +343,12 @@ export default function PdfViewer() {
                                 <p>Unable to display PDF. <a href={fileUrl}>Download</a> instead.</p>
                             </object>
                         ) : (
-                            <img
+                            <Image
                                 src={fileUrl}
                                 alt={uploadStatus?.filename || 'Uploaded file'}
+                                layout="responsive"
+                                width={700}
+                                height={475}
                                 className="max-w-full h-auto"
                             />
                         )}
