@@ -14,11 +14,23 @@ interface SelectFilesModalProps {
 export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalProps) {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Animation states
+  const [isAnimatingIn, setIsAnimatingIn] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
 
+  // Handle animation states when open state changes
   useEffect(() => {
-    // Fetch files when modal opens
     if (isOpen) {
+      setIsVisible(true);
+      // Trigger animation in after a tiny delay to ensure visibility is applied first
+      setTimeout(() => setIsAnimatingIn(true), 10);
       fetchFiles();
+    } else {
+      setIsAnimatingIn(false);
+      // Wait for animation to complete before hiding
+      const timer = setTimeout(() => setIsVisible(false), 300);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
@@ -38,6 +50,7 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
       setFiles(fileItems);
     } catch (error) {
       console.error('Error fetching files:', error);
+      setFiles([]); // Set to empty array on error
     } finally {
       setIsLoading(false);
     }
@@ -51,22 +64,29 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
     onClose();
   };
 
-  if (!isOpen) return null;
+  if (!isVisible && !isOpen) return null;
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]"
+      className={`fixed inset-0 bg-black transition-opacity duration-300 ease-in-out flex items-center justify-center z-[9999]
+        ${isAnimatingIn ? 'bg-opacity-50' : 'bg-opacity-0'}`} 
       onClick={onClose}
+      aria-modal="true"
+      role="dialog"
     >
+      {/* Dialog content */}
       <div 
-        className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()} 
+        className={`relative bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden transition-all duration-300 ease-in-out
+          ${isAnimatingIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}
       >
         <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="text-xl font-semibold">Select Files</h3>
+          <h3 className="text-xl font-semibold text-gray-900">
+            Select Files
+          </h3>
           <button
             onClick={onClose}
-            className="text-gray-600 hover:text-gray-900 focus:outline-none"
+            className="text-gray-600 hover:text-gray-900 focus:outline-none transition-colors duration-200"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -86,7 +106,7 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
         <div className="p-4 max-h-96 overflow-y-auto">
           {isLoading ? (
             <div className="flex justify-center items-center h-32">
-              <p>Loading files...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-700"></div>
             </div>
           ) : files.length === 0 ? (
             <div className="flex justify-center items-center h-32">
@@ -97,7 +117,7 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
               {files.map((file, index) => (
                 <li 
                   key={index} 
-                  className="flex items-center p-2 hover:bg-gray-100 rounded-lg cursor-pointer"
+                  className="flex items-center p-2 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200"
                   onClick={() => handleFileSelect(file.name)}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
