@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import MainLayout from "@/components/main-layout";
-import ChatInterface from "@/components/chat-interface";
-import PdfViewer from "@/components/pdf-viewer";
-import FileManager from "@/components/file-manager";
+import ChatInterface from "@/components/chat-page/chat-interface";
+import PdfViewer from "@/components/chat-page/pdf-viewer";
+import FileManager from "@/components/home-page/file-manager";
 
 export default function Home() {
     const [selectedTab, setSelectedTab] = useState("");
