@@ -14,52 +14,54 @@ interface SidebarProps {
 
 export function Sidebar({ selectedTab, onSelectTab }: SidebarProps) {
     return (
-        <Card
-            className="h-[calc(100vh-2rem)] w-full max-w-[25rem] p-4 shadow-xl shadow-blue-gray-900/5"
-            placeholder=""
-            onPointerEnterCapture={() => { }}
-            onPointerLeaveCapture={() => { }}
-        >
-            <List
+        <div className="h-full" style={{ width: '200px', flexShrink: 0 }}>
+            <Card
+                className="h-full p-4 shadow-xl shadow-blue-gray-900/5"
                 placeholder=""
                 onPointerEnterCapture={() => { }}
                 onPointerLeaveCapture={() => { }}
             >
-                <ListItem
-                    onClick={() => onSelectTab("home")}
-                    className={`cursor-pointer ${selectedTab === "home" ? "bg-blue-50 font-bold" : ""}`}
+                <List
                     placeholder=""
                     onPointerEnterCapture={() => { }}
                     onPointerLeaveCapture={() => { }}
                 >
-                    <ListItemPrefix
-                        className="mr-2"
+                    <ListItem
+                        onClick={() => onSelectTab("home")}
+                        className={`cursor-pointer ${selectedTab === "home" ? "bg-blue-50 font-bold" : ""}`}
                         placeholder=""
                         onPointerEnterCapture={() => { }}
                         onPointerLeaveCapture={() => { }}
                     >
-                        <HomeIcon className="h-5 w-5" />
-                    </ListItemPrefix>
-                    Home
-                </ListItem>
-                <ListItem
-                    onClick={() => onSelectTab("chat")}
-                    className={`cursor-pointer ${selectedTab === "chat" ? "bg-blue-50 font-bold" : ""}`}
-                    placeholder=""
-                    onPointerEnterCapture={() => { }}
-                    onPointerLeaveCapture={() => { }}
-                >
-                    <ListItemPrefix
-                        className="mr-2"
+                        <ListItemPrefix
+                            className="mr-2"
+                            placeholder=""
+                            onPointerEnterCapture={() => { }}
+                            onPointerLeaveCapture={() => { }}
+                        >
+                            <HomeIcon className="h-5 w-5" />
+                        </ListItemPrefix>
+                        Home
+                    </ListItem>
+                    <ListItem
+                        onClick={() => onSelectTab("chat")}
+                        className={`cursor-pointer ${selectedTab === "chat" ? "bg-blue-50 font-bold" : ""}`}
                         placeholder=""
                         onPointerEnterCapture={() => { }}
                         onPointerLeaveCapture={() => { }}
                     >
-                        <ChatBubbleLeftEllipsisIcon className="h-5 w-5" />
-                    </ListItemPrefix>
-                    Chat
-                </ListItem>
-            </List>
-        </Card>
+                        <ListItemPrefix
+                            className="mr-2"
+                            placeholder=""
+                            onPointerEnterCapture={() => { }}
+                            onPointerLeaveCapture={() => { }}
+                        >
+                            <ChatBubbleLeftEllipsisIcon className="h-5 w-5" />
+                        </ListItemPrefix>
+                        Chat
+                    </ListItem>
+                </List>
+            </Card>
+        </div>
     );
 }
