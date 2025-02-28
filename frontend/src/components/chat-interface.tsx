@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
+import SelectFilesModal from "./select-files-modal"
 
 interface Source {
     file_name: string;
@@ -38,6 +39,7 @@ export default function ChatInterface() {
         response: 'success'
     }])
     const [isLoading, setIsLoading] = useState(false)
+    const [isSelectFilesModalOpen, setIsSelectFilesModalOpen] = useState(false)
 
     useEffect(() => {
         const handleFileUpload = (event: CustomEvent) => {
@@ -164,6 +166,16 @@ export default function ChatInterface() {
 
     return (
         <div className="flex flex-col h-[calc(100vh-2rem)] border rounded-lg p-4">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold">Chat</h2>
+                <Button 
+                    variant="outline"
+                    onClick={() => setIsSelectFilesModalOpen(true)}
+                    className="text-sm"
+                >
+                    Select Files
+                </Button>
+            </div>
             <div className="flex-grow overflow-y-auto mb-4 space-y-4">
                 {messages.map((msg, index) => (
                     <div 
@@ -224,6 +236,12 @@ export default function ChatInterface() {
                     {isLoading ? 'Sending...' : 'Send'}
                 </Button>
             </form>
+            
+            {/* Files selection modal */}
+            <SelectFilesModal 
+                isOpen={isSelectFilesModalOpen}
+                onClose={() => setIsSelectFilesModalOpen(false)}
+            />
         </div>
     )
 }

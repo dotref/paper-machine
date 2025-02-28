@@ -7,12 +7,12 @@ import {
 } from "@material-tailwind/react";
 import { ChatBubbleLeftEllipsisIcon, HomeIcon } from "@heroicons/react/24/solid";
 
-interface DefaultSidebarWithTabsProps {
+interface SidebarProps {
     selectedTab: string;
     onSelectTab: (tab: string) => void;
 }
 
-export function DefaultSidebarWithTabs({ selectedTab, onSelectTab }: DefaultSidebarWithTabsProps) {
+export function Sidebar({ selectedTab, onSelectTab }: SidebarProps) {
     return (
         <Card
             className="h-[calc(100vh-2rem)] w-full max-w-[20rem] p-4 shadow-xl shadow-blue-gray-900/5"
