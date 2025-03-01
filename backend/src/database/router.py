@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from typing import List, Annotated, Any
 from minio import Minio
 import logging
+import urllib.parse
 from pydantic import BaseModel
 from .dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client, get_pg_client
 from .embedding_utils import process_document_embeddings
@@ -130,23 +131,43 @@ async def remove_document(
             detail=f"Error removing file: {str(e)}"
         )
 
-@router.get("/serve/{object_key}")
+@router.get("/serve/{object_key:path}")
 async def serve_file(
-    fileinfo: Annotated[str, Depends(validate_object_key)],
+    object_key: str,
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
 ) -> StreamingResponse:
     """Serve a file from MinIO storage"""
-    logger.info(f"Serve endpoint triggered for object: {fileinfo.object_key}")
+    # URL decode the object_key to handle properly encoded paths with slashes
+    object_key = urllib.parse.unquote(object_key)
+    logger.info(f"Serve endpoint triggered for object: {object_key}")
+    
     try:
+        # Validate object exists
+        try:
+            # Get file metadata from MinIO
+            stat = minio_client.stat_object(BUCKET_NAME, object_key)
+            
+            # Extract metadata
+            metadata = FileMetadata(
+                file_name=stat.metadata.get("x-amz-meta-file_name", object_key),
+                content_type=stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
+            )
+        except Exception as e:
+            logger.error(f"Object validation error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Object not found"
+            )
+            
         # Get file data from MinIO
-        data = minio_client.get_object(BUCKET_NAME, fileinfo.object_key)
+        data = minio_client.get_object(BUCKET_NAME, object_key)
         
         return StreamingResponse(
             data.stream(),
-            media_type=fileinfo.metadata.content_type,
+            media_type=metadata.content_type,
             headers={
-                'Content-Disposition': f'inline; filename="{fileinfo.metadata.file_name}"',
-                'Content-Type': fileinfo.metadata.content_type
+                'Content-Disposition': f'inline; filename="{metadata.file_name}"',
+                'Content-Type': metadata.content_type
             }
         )
     except Exception as e:

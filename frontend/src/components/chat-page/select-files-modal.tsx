@@ -13,6 +13,15 @@ interface FileItem {
     object_key: string;
 }
 
+interface FolderItem {
+    name: string;
+    type: 'folder';
+    files: (FileItem | FolderItem)[];
+    path: string; // Store the full path to this folder
+}
+
+type Item = FileItem | FolderItem;
+
 interface FileInfo {
     object_key: string;
     metadata: FileMetadata;
@@ -24,8 +33,10 @@ interface SelectFilesModalProps {
 }
 
 export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalProps) {
-    const [files, setFiles] = useState<FileItem[]>([]);
+    const [fileStructure, setFileStructure] = useState<Item[]>([]);
     const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
+    const [currentPath, setCurrentPath] = useState<string[]>([]);
+    const [currentItems, setCurrentItems] = useState<Item[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +50,7 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
             setIsVisible(true);
             // Trigger animation in after a tiny delay to ensure visibility is applied first
             setTimeout(() => setIsAnimatingIn(true), 10);
+            setCurrentPath([]);
             fetchFiles();
             // Clear selections when modal opens
             setSelectedFiles([]);
@@ -49,6 +61,33 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
             return () => clearTimeout(timer);
         }
     }, [isOpen]);
+
+    // Update current items based on path
+    useEffect(() => {
+        if (currentPath.length === 0) {
+            // At root level
+            setCurrentItems(fileStructure);
+        } else {
+            // Navigate to current path
+            let items = [...fileStructure];
+            let currentFolder: FolderItem | undefined;
+            
+            for (const folderName of currentPath) {
+                currentFolder = items.find(
+                    item => item.type === 'folder' && item.name === folderName
+                ) as FolderItem | undefined;
+                
+                if (!currentFolder) {
+                    setCurrentPath([]);
+                    return;
+                }
+                
+                items = currentFolder.files;
+            }
+            
+            setCurrentItems(items);
+        }
+    }, [currentPath, fileStructure]);
 
     const fetchFiles = async () => {
         setIsLoading(true);
@@ -64,20 +103,76 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
             
             const data = await response.json() as FileInfo[];
             
-            // Convert API response to our FileItem format
-            const fileItems: FileItem[] = data.map((fileInfo: FileInfo) => ({
-                name: fileInfo.metadata.file_name,
-                type: 'file',
-                object_key: fileInfo.object_key
-            }));
-            
-            setFiles(fileItems);
+            // Process the files into a folder structure
+            const structure = processFilesIntoFolderStructure(data);
+            setFileStructure(structure);
         } catch (error) {
             console.error('Error fetching files:', error);
             setError('Failed to load files. Please try again later.');
-            setFiles([]);
+            setFileStructure([]);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // Function to process files into a folder structure
+    const processFilesIntoFolderStructure = (files: FileInfo[]): Item[] => {
+        const root: Item[] = [];
+        
+        files.forEach(fileInfo => {
+            const objectPath = fileInfo.object_key;
+            const pathSegments = objectPath.split('/');
+            
+            if (pathSegments.length === 1) {
+                // File is at root level
+                root.push({
+                    name: fileInfo.metadata.file_name,
+                    type: 'file',
+                    object_key: fileInfo.object_key
+                });
+            } else {
+                // File is nested in folders
+                const fileName = fileInfo.metadata.file_name;
+                const folderPath = pathSegments.slice(0, -1);
+                
+                // Add file to proper folder hierarchy
+                addFileToNestedFolder(root, folderPath, {
+                    name: fileName,
+                    type: 'file',
+                    object_key: fileInfo.object_key
+                }, '');
+            }
+        });
+        
+        return root;
+    };
+    
+    // Helper to add file to nested folder structure
+    const addFileToNestedFolder = (items: Item[], folderPath: string[], file: FileItem, parentPath: string) => {
+        const currentFolder = folderPath[0];
+        const currentFolderPath = parentPath ? `${parentPath}/${currentFolder}` : currentFolder;
+        
+        // Find or create the folder
+        let folder = items.find(
+            item => item.type === 'folder' && item.name === currentFolder
+        ) as FolderItem | undefined;
+        
+        if (!folder) {
+            folder = {
+                name: currentFolder,
+                type: 'folder',
+                files: [],
+                path: currentFolderPath
+            };
+            items.push(folder);
+        }
+        
+        if (folderPath.length > 1) {
+            // Recurse deeper into the folder structure
+            addFileToNestedFolder(folder.files, folderPath.slice(1), file, currentFolderPath);
+        } else {
+            // Add file to this folder
+            folder.files.push(file);
         }
     };
 
@@ -98,15 +193,52 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
         return selectedFiles.some(f => f.object_key === file.object_key);
     };
 
-    // Select all files
-    const selectAllFiles = () => {
-        if (selectedFiles.length === files.length) {
-            // If all are selected, deselect all
-            setSelectedFiles([]);
+    // Select all files in current view
+    const selectAllCurrentFiles = () => {
+        // Get all files in current view (including nested folders)
+        const getAllFilesInView = (items: Item[]): FileItem[] => {
+            return items.flatMap(item => {
+                if (item.type === 'file') {
+                    return [item];
+                } else {
+                    return getAllFilesInView(item.files);
+                }
+            });
+        };
+        
+        const filesInCurrentView = getAllFilesInView(currentItems);
+        
+        if (filesInCurrentView.every(file => isFileSelected(file))) {
+            // If all files in view are selected, deselect them
+            setSelectedFiles(prev => 
+                prev.filter(selectedFile => 
+                    !filesInCurrentView.some(file => file.object_key === selectedFile.object_key)
+                )
+            );
         } else {
-            // Otherwise select all
-            setSelectedFiles([...files]);
+            // Otherwise, select all files in view that aren't already selected
+            setSelectedFiles(prev => {
+                const newSelections = filesInCurrentView.filter(
+                    file => !prev.some(selectedFile => selectedFile.object_key === file.object_key)
+                );
+                return [...prev, ...newSelections];
+            });
         }
+    };
+
+    // Handle folder navigation
+    const enterFolder = (folder: FolderItem) => {
+        setCurrentPath([...currentPath, folder.name]);
+    };
+
+    // Navigate to a specific path level
+    const navigateToPath = (index: number) => {
+        setCurrentPath(currentPath.slice(0, index + 1));
+    };
+
+    // Navigate to root
+    const navigateToRoot = () => {
+        setCurrentPath([]);
     };
 
     // Handle viewing selected files
@@ -118,7 +250,7 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
             detail: { 
                 files: selectedFiles.map(file => ({
                     filename: file.name,
-                    object_key: file.object_key
+                    object_key: file.object_key // This is the key that needs proper encoding later
                 }))
             }
         });
@@ -140,8 +272,8 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
             const firstFile = selectedFiles[0];
             const displayEvent = new CustomEvent('displayFile', {
                 detail: { 
-                    filename: firstFile.name, 
-                    object_key: firstFile.object_key,
+                    filename: encodeURIComponent(firstFile.name), // Ensure proper encoding
+                    object_key: firstFile.object_key, // Leave as-is, will be encoded in pdf-viewer
                     pageLabel: '0',
                     isMultiFile: true,
                     fileIndex: 0,
@@ -155,6 +287,35 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
     };
 
     if (!isVisible && !isOpen) return null;
+
+    // Check if all files in current view are selected
+    const areAllFilesInViewSelected = () => {
+        const getAllFilesInView = (items: Item[]): FileItem[] => {
+            return items.flatMap(item => {
+                if (item.type === 'file') {
+                    return [item];
+                } else {
+                    return getAllFilesInView(item.files);
+                }
+            });
+        };
+        
+        const filesInCurrentView = getAllFilesInView(currentItems);
+        return filesInCurrentView.length > 0 && 
+               filesInCurrentView.every(file => isFileSelected(file));
+    };
+
+    // Count total files in current view
+    const countFilesInView = (items: Item[]): number => {
+        return items.reduce((count, item) => {
+            if (item.type === 'file') {
+                return count + 1;
+            }
+            return count + countFilesInView(item.files);
+        }, 0);
+    };
+
+    const totalFilesInView = countFilesInView(currentItems);
 
     return (
         <div 
@@ -193,27 +354,56 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                     </button>
                 </div>
 
-                <div className="p-4">
-                    <div className="flex items-center">
-                        <Checkbox 
-                            id="select-all"
-                            checked={files.length > 0 && selectedFiles.length === files.length}
-                            onChange={() => selectAllFiles()}
-                            color="blue"
-                            className="h-4 w-4"
-                            ripple={false}
-                            crossOrigin={undefined}
-                        />
-                        <label htmlFor="select-all" className="ml-2 text-sm font-medium text-gray-700 cursor-pointer" onClick={() => selectAllFiles()}>
-                            Select All
-                        </label>
-                        <span className="ml-auto text-sm text-gray-500">
-                            {selectedFiles.length} of {files.length} selected
+                {/* Breadcrumb navigation */}
+                <div className="p-4 border-b">
+                    <div className="flex items-center flex-wrap mb-2">
+                        <button
+                            onClick={navigateToRoot}
+                            className="text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                            Files
+                        </button>
+                        
+                        {currentPath.map((folder, index) => (
+                            <React.Fragment key={index}>
+                                <span className="mx-2 text-gray-500">/</span>
+                                <button
+                                    className={`${
+                                        index === currentPath.length - 1 
+                                            ? 'font-semibold text-gray-700' 
+                                            : 'text-blue-600 hover:text-blue-800'
+                                    }`}
+                                    onClick={() => navigateToPath(index)}
+                                >
+                                    {folder}
+                                </button>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                            <Checkbox 
+                                id="select-all"
+                                checked={areAllFilesInViewSelected()}
+                                onChange={selectAllCurrentFiles}
+                                color="blue"
+                                className="h-4 w-4 mr-2"
+                                ripple={false}
+                                crossOrigin={undefined}
+                            />
+                            <label htmlFor="select-all" className="text-sm font-medium cursor-pointer" onClick={selectAllCurrentFiles}>
+                                Select All
+                            </label>
+                        </div>
+                        
+                        <span className="text-sm text-gray-500">
+                            {selectedFiles.length} selected
                         </span>
                     </div>
                 </div>
 
-                <div className="px-4 pb-4 max-h-80 overflow-y-auto">
+                <div className="max-h-[300px] overflow-y-auto p-2">
                     {isLoading ? (
                         <div className="flex justify-center items-center h-32">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-700"></div>
@@ -222,36 +412,52 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                         <div className="flex justify-center items-center h-32 text-red-500">
                             <p>{error}</p>
                         </div>
-                    ) : files.length === 0 ? (
+                    ) : currentItems.length === 0 ? (
                         <div className="flex justify-center items-center h-32">
-                            <p className="text-gray-500">No files available</p>
+                            <p className="text-gray-500">This folder is empty</p>
                         </div>
                     ) : (
-                        <ul className="space-y-2">
-                            {files.map((file, index) => (
+                        <ul className="space-y-1">
+                            {currentItems.map((item, index) => (
                                 <li 
                                     key={index} 
-                                    className={`flex items-center p-2 rounded-lg transition-colors duration-200 ${isFileSelected(file) ? 'bg-blue-50' : 'hover:bg-gray-100'}`}
+                                    className={`rounded-lg transition-colors duration-200 ${
+                                        item.type === 'file' && isFileSelected(item as FileItem) 
+                                            ? 'bg-blue-50' 
+                                            : 'hover:bg-gray-100'
+                                    }`}
                                 >
-                                    <Checkbox 
-                                        id={`file-${index}`}
-                                        checked={isFileSelected(file)}
-                                        onChange={() => toggleFileSelection(file)}
-                                        color="blue"
-                                        className="h-4 w-4"
-                                        ripple={false}
-                                        crossOrigin={undefined}
-                                    />
-                                    <label 
-                                        htmlFor={`file-${index}`}
-                                        className="flex items-center flex-grow ml-2 cursor-pointer"
-                                        onClick={() => toggleFileSelection(file)}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                                        </svg>
-                                        <span>{file.name}</span>
-                                    </label>
+                                    {item.type === 'folder' ? (
+                                        <div 
+                                            className="flex items-center p-2 cursor-pointer"
+                                            onClick={() => enterFolder(item as FolderItem)}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                                            </svg>
+                                            <span>{item.name}</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center p-2">
+                                            <Checkbox 
+                                                checked={isFileSelected(item as FileItem)}
+                                                onChange={() => toggleFileSelection(item as FileItem)}
+                                                color="blue"
+                                                className="h-4 w-4"
+                                                ripple={false}
+                                                crossOrigin={undefined}
+                                            />
+                                            <label 
+                                                className="flex items-center ml-2 cursor-pointer flex-grow"
+                                                onClick={() => toggleFileSelection(item as FileItem)}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                                                </svg>
+                                                <span className="truncate">{item.name}</span>
+                                            </label>
+                                        </div>
+                                    )}
                                 </li>
                             ))}
                         </ul>

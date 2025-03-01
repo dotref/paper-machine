@@ -58,10 +58,15 @@ export default function PdfViewer() {
                 let url;
 
                 if (object_key) {
-                    // Use the storage/serve endpoint as defined in router.py
-                    const response = await fetch(`http://localhost:5000/storage/serve/${object_key}`);
-                    if (!response.ok) throw new Error('Failed to fetch file from storage');
-
+                    // Properly encode object_key for URL path
+                    const encodedObjectKey = encodeURIComponent(object_key);
+                    const response = await fetch(`http://localhost:5000/storage/serve/${encodedObjectKey}`);
+                    
+                    if (!response.ok) {
+                        console.error(`Error fetching file with status: ${response.status} ${response.statusText}`);
+                        throw new Error('Failed to fetch file from storage');
+                    }
+                    
                     const blob = await response.blob();
                     url = URL.createObjectURL(blob);
                 } else {
@@ -84,16 +89,16 @@ export default function PdfViewer() {
                 setFileUrl(url);
 
                 setUploadStatus({
-                    filename: filename,
+                    filename: decodeURIComponent(filename), // Decode to show readable filename
                     status: 'processed',
-                    message: `Now viewing ${filename}${type === 'pdf' ? ` (page ${parseInt(pageLabel) + 1})` : ''}${
+                    message: `Now viewing ${decodeURIComponent(filename)}${type === 'pdf' ? ` (page ${parseInt(pageLabel) + 1})` : ''}${
                         isMultiFile ? ` (${fileIndex + 1} of ${totalFiles})` : ''
                     }`
                 });
             } catch (error) {
                 console.error('Error displaying file:', error);
                 setUploadStatus({
-                    filename: filename,
+                    filename: decodeURIComponent(filename),
                     status: 'error',
                     message: 'Error displaying file'
                 });
@@ -237,7 +242,7 @@ export default function PdfViewer() {
                     <div className="flex flex-col h-full">
                         {/* Header with file navigation */}
                         <div className="border-b p-2 flex justify-between items-center">
-                            <div className="font-semibold truncate max-w-[70%]">
+                            <div className="text-wrap font-semibold truncate max-w-[70%]">
                                 {uploadStatus?.filename}
                             </div>
 
