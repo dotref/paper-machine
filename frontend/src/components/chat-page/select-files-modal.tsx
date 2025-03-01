@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface FileMetadata {
     file_name: string;
@@ -24,6 +25,7 @@ interface SelectFilesModalProps {
 
 export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalProps) {
     const [files, setFiles] = useState<FileItem[]>([]);
+    const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +40,8 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
             // Trigger animation in after a tiny delay to ensure visibility is applied first
             setTimeout(() => setIsAnimatingIn(true), 10);
             fetchFiles();
+            // Clear selections when modal opens
+            setSelectedFiles([]);
         } else {
             setIsAnimatingIn(false);
             // Wait for animation to complete before hiding
@@ -77,26 +81,75 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
         }
     };
 
-    const handleFileSelect = (file: FileItem) => {
-        // Create event with both filename and object_key
-        const event = new CustomEvent('displayFile', {
+    // Toggle selection of a file
+    const toggleFileSelection = (file: FileItem) => {
+        setSelectedFiles(prev => {
+            const isSelected = prev.some(f => f.object_key === file.object_key);
+            if (isSelected) {
+                return prev.filter(f => f.object_key !== file.object_key);
+            } else {
+                return [...prev, file];
+            }
+        });
+    };
+
+    // Check if a file is selected
+    const isFileSelected = (file: FileItem) => {
+        return selectedFiles.some(f => f.object_key === file.object_key);
+    };
+
+    // Select all files
+    const selectAllFiles = () => {
+        if (selectedFiles.length === files.length) {
+            // If all are selected, deselect all
+            setSelectedFiles([]);
+        } else {
+            // Otherwise select all
+            setSelectedFiles([...files]);
+        }
+    };
+
+    // Handle viewing selected files
+    const viewSelectedFiles = () => {
+        if (selectedFiles.length === 0) return;
+        
+        // Create special event for multiple files
+        const event = new CustomEvent('displayMultipleFiles', {
             detail: { 
-                filename: file.name, 
-                object_key: file.object_key,
-                pageLabel: '0' 
+                files: selectedFiles.map(file => ({
+                    filename: file.name,
+                    object_key: file.object_key
+                }))
             }
         });
         window.dispatchEvent(event);
         
-        // Also dispatch a file uploaded event to provide feedback in the chat
+        // Send message to chat about the selected files
+        const fileNames = selectedFiles.map(file => file.name).join(", ");
         const uploadEvent = new CustomEvent('fileUploaded', {
             detail: {
-                filename: file.name,
+                filename: fileNames,
                 status: 'success',
-                message: `Now viewing ${file.name}`
+                message: `Selected ${selectedFiles.length} file(s): ${fileNames}`
             }
         });
         window.dispatchEvent(uploadEvent);
+        
+        // Just display the first file immediately
+        if (selectedFiles.length > 0) {
+            const firstFile = selectedFiles[0];
+            const displayEvent = new CustomEvent('displayFile', {
+                detail: { 
+                    filename: firstFile.name, 
+                    object_key: firstFile.object_key,
+                    pageLabel: '0',
+                    isMultiFile: true,
+                    fileIndex: 0,
+                    totalFiles: selectedFiles.length
+                }
+            });
+            window.dispatchEvent(displayEvent);
+        }
         
         onClose();
     };
@@ -140,7 +193,23 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                     </button>
                 </div>
 
-                <div className="p-4 max-h-96 overflow-y-auto">
+                <div className="p-4">
+                    <div className="flex items-center mb-4">
+                        <Checkbox 
+                            id="select-all"
+                            checked={files.length > 0 && selectedFiles.length === files.length}
+                            onCheckedChange={selectAllFiles}
+                        />
+                        <label htmlFor="select-all" className="ml-2 text-sm font-medium text-gray-700">
+                            Select All
+                        </label>
+                        <span className="ml-auto text-sm text-gray-500">
+                            {selectedFiles.length} of {files.length} selected
+                        </span>
+                    </div>
+                </div>
+
+                <div className="px-4 pb-4 max-h-80 overflow-y-auto">
                     {isLoading ? (
                         <div className="flex justify-center items-center h-32">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-700"></div>
@@ -158,13 +227,24 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                             {files.map((file, index) => (
                                 <li 
                                     key={index} 
-                                    className="flex items-center p-2 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200"
-                                    onClick={() => handleFileSelect(file)}
+                                    className={`flex items-center p-2 rounded-lg transition-colors duration-200 ${isFileSelected(file) ? 'bg-blue-50' : 'hover:bg-gray-100'}`}
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span>{file.name}</span>
+                                    <Checkbox 
+                                        id={`file-${index}`}
+                                        checked={isFileSelected(file)}
+                                        onCheckedChange={() => toggleFileSelection(file)}
+                                        className="mr-2"
+                                    />
+                                    <label 
+                                        htmlFor={`file-${index}`}
+                                        className="flex items-center flex-grow cursor-pointer"
+                                        onClick={() => toggleFileSelection(file)}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                                        </svg>
+                                        <span>{file.name}</span>
+                                    </label>
                                 </li>
                             ))}
                         </ul>
@@ -176,12 +256,26 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                         onClick={fetchFiles} 
                         variant="outline"
                         disabled={isLoading}
+                        size="sm"
                     >
                         {isLoading ? 'Refreshing...' : 'Refresh'}
                     </Button>
-                    <Button onClick={onClose} variant="outline">
-                        Close
-                    </Button>
+                    <div className="space-x-2">
+                        <Button 
+                            onClick={onClose} 
+                            variant="outline"
+                            size="sm"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            onClick={viewSelectedFiles}
+                            disabled={selectedFiles.length === 0}
+                            size="sm"
+                        >
+                            View Selected ({selectedFiles.length})
+                        </Button>
+                    </div>
                 </div>
             </div>
         </div>
