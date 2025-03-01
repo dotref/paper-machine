@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checkbox } from "@material-tailwind/react";
 
 interface FileMetadata {
     file_name: string;
@@ -194,13 +194,17 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                 </div>
 
                 <div className="p-4">
-                    <div className="flex items-center mb-4">
+                    <div className="flex items-center">
                         <Checkbox 
                             id="select-all"
                             checked={files.length > 0 && selectedFiles.length === files.length}
-                            onCheckedChange={selectAllFiles}
+                            onChange={() => selectAllFiles()}
+                            color="blue"
+                            className="h-4 w-4"
+                            ripple={false}
+                            crossOrigin={undefined}
                         />
-                        <label htmlFor="select-all" className="ml-2 text-sm font-medium text-gray-700">
+                        <label htmlFor="select-all" className="ml-2 text-sm font-medium text-gray-700 cursor-pointer" onClick={() => selectAllFiles()}>
                             Select All
                         </label>
                         <span className="ml-auto text-sm text-gray-500">
@@ -232,12 +236,15 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                                     <Checkbox 
                                         id={`file-${index}`}
                                         checked={isFileSelected(file)}
-                                        onCheckedChange={() => toggleFileSelection(file)}
-                                        className="mr-2"
+                                        onChange={() => toggleFileSelection(file)}
+                                        color="blue"
+                                        className="h-4 w-4"
+                                        ripple={false}
+                                        crossOrigin={undefined}
                                     />
                                     <label 
                                         htmlFor={`file-${index}`}
-                                        className="flex items-center flex-grow cursor-pointer"
+                                        className="flex items-center flex-grow ml-2 cursor-pointer"
                                         onClick={() => toggleFileSelection(file)}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
