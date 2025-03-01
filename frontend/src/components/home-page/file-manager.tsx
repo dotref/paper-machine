@@ -66,11 +66,27 @@ export default function FileManager() {
         }
     };
     
-    // New function to process files into a folder structure
+    // Updated function to process files into a folder structure
     const processFilesIntoFolderStructure = (files: FileInfo[]): Item[] => {
         const root: Item[] = [];
+        const folderPlaceholders: string[] = [];
         
+        // First pass: identify folder placeholders and create an array of folder paths
         files.forEach(fileInfo => {
+            if (fileInfo.object_key.endsWith('.folder')) {
+                // Extract the folder path and name from the placeholder
+                const folderPath = fileInfo.object_key.slice(0, -7); // Remove ".folder"
+                folderPlaceholders.push(folderPath);
+            }
+        });
+        
+        // Second pass: process regular files
+        files.forEach(fileInfo => {
+            // Skip .folder placeholder files when adding files
+            if (fileInfo.object_key.endsWith('.folder')) {
+                return;
+            }
+            
             // Get the path segments from the object_key
             const objectPath = fileInfo.object_key;
             const pathSegments = objectPath.split('/');
@@ -96,7 +112,49 @@ export default function FileManager() {
             }
         });
         
+        // Third pass: ensure empty folders exist in the structure
+        folderPlaceholders.forEach(folderPath => {
+            // Skip if it's an empty string
+            if (!folderPath) return;
+            
+            // Split by slashes to get folder segments
+            const pathSegments = folderPath.split('/').filter(segment => segment.length > 0);
+            
+            // If we have a folder structure
+            if (pathSegments.length > 0) {
+                ensureFolderExists(root, pathSegments);
+            }
+        });
+        
         return root;
+    };
+    
+    // New helper function to ensure a folder exists in the structure
+    const ensureFolderExists = (items: Item[], folderPath: string[]) => {
+        // Skip if path is empty
+        if (folderPath.length === 0) return;
+        
+        const currentFolder = folderPath[0];
+        
+        // Find the folder at this level
+        let folder = items.find(
+            item => item.type === 'folder' && item.name === currentFolder
+        ) as FolderItem | undefined;
+        
+        // If folder doesn't exist, create it
+        if (!folder) {
+            folder = {
+                name: currentFolder,
+                type: 'folder',
+                files: []
+            };
+            items.push(folder);
+        }
+        
+        // If we have more folders in the path, recurse
+        if (folderPath.length > 1) {
+            ensureFolderExists(folder.files, folderPath.slice(1));
+        }
     };
     
     // Helper to add file to nested folder structure
@@ -131,7 +189,11 @@ export default function FileManager() {
     useEffect(() => {
         if (currentPath.length === 0) {
             // At root level, show all items from root
-            setCurrentItems(items);
+            const sortedItems = [...items].sort((a, b) => {
+                if (a.type === b.type) return a.name.localeCompare(b.name);
+                return a.type === 'folder' ? -1 : 1; // Folders first
+            });
+            setCurrentItems(sortedItems);
         } else {
             // Find the folder at the current path
             let currentFolder: FolderItem | null = null;
@@ -154,7 +216,12 @@ export default function FileManager() {
             }
 
             if (currentFolder) {
-                setCurrentItems(currentFolder.files || []);
+                // Sort the items to display folders first
+                const sortedItems = [...currentFolder.files].sort((a, b) => {
+                    if (a.type === b.type) return a.name.localeCompare(b.name);
+                    return a.type === 'folder' ? -1 : 1; // Folders first
+                });
+                setCurrentItems(sortedItems);
             }
         }
     }, [currentPath, items]);
@@ -249,7 +316,7 @@ export default function FileManager() {
         }
     };
 
-    // Modal functions for new folder - now only in frontend
+    // Modal functions for new folder
     const toggleFolderModal = () => {
         setIsFolderModalOpen(!isFolderModalOpen);
         if (!isFolderModalOpen) {
@@ -257,44 +324,44 @@ export default function FileManager() {
         }
     };
 
-    const createFolder = () => {
+    // Updated createFolder function to persist folders to backend
+    const createFolder = async () => {
         if (!newFolderName.trim()) return;
-
-        // Create a new folder
-        const newFolder: FolderItem = {
-            name: newFolderName,
-            type: 'folder',
-            files: []
-        };
-
-        if (currentPath.length === 0) {
-            // Add folder to root
-            setItems(prev => [...prev, newFolder]);
-        } else {
-            // Add folder to the current path
-            const updatedItems = addFolderToPath(items, currentPath, newFolder);
-            setItems(updatedItems);
-        }
-
-        setStatusMessage(`Folder "${newFolderName}" created successfully.`);
-        setIsFolderModalOpen(false);
-    };
-
-    // Helper function to add a folder to a nested path
-    const addFolderToPath = (items: Item[], path: string[], newFolder: FolderItem): Item[] => {
-        if (path.length === 0) return [...items, newFolder];
-
-        return items.map(item => {
-            if (item.type === 'folder' && item.name === path[0]) {
-                return {
-                    ...item,
-                    files: path.length === 1
-                        ? [...item.files, newFolder]
-                        : addFolderToPath(item.files, path.slice(1), newFolder)
-                };
+        
+        setStatusMessage("Creating folder...");
+        
+        try {
+            // Prepare the folder path (if we're in a sub-folder)
+            const folderPath = currentPath.length > 0 ? currentPath.join('/') : "";
+            
+            // Call the backend API to create the folder
+            const response = await fetch('http://localhost:5000/storage/create_folder', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    folder_name: newFolderName,
+                    folder_path: folderPath
+                }),
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                setStatusMessage(`Folder "${newFolderName}" created successfully.`);
+                
+                // Refresh the file list to show the new folder
+                fetchFiles();
+            } else {
+                setStatusMessage(data.message || "Failed to create folder");
             }
-            return item;
-        });
+        } catch (error) {
+            console.error('Error creating folder:', error);
+            setStatusMessage("Error creating folder");
+        }
+        
+        setIsFolderModalOpen(false);
     };
 
     const confirmRemove = (itemName: string) => {
@@ -380,62 +447,84 @@ export default function FileManager() {
         setCurrentPath(currentPath.slice(0, index + 1));
     };
 
+    // Update the file click handler to prevent clicking on .folder files
+    // This adds an extra safety check in case a .folder file somehow gets displayed
+    const handleFileClick = (item: FileItem) => {
+        // Skip .folder placeholder files
+        if (item.object_key?.endsWith('.folder')) {
+            return;
+        }
+        
+        // Dispatch the file display event
+        const event = new CustomEvent('displayFile', {
+            detail: { 
+                filename: item.name, 
+                object_key: item.object_key,
+                pageLabel: '0' 
+            }
+        });
+        window.dispatchEvent(event);
+    };
+
     return (
         <div className="p-4">
-            {/* Title with breadcrumb navigation */}
-            <div className="flex items-center flex-wrap mb-4">
-                <h2 className="text-2xl font-bold">
-                    <button
-                        onClick={() => setCurrentPath([])}
-                        className="hover:text-blue-600 transition-colors duration-200"
-                    >
-                        Home
-                    </button>
-                </h2>
-                {currentPath.length > 0 && (
-                    <div className="flex items-center gap-1 ml-2">
-                        <span className="text-gray-500">/</span>
-                        {currentPath.map((folder, index) => (
-                            <React.Fragment key={index}>
-                                <button
-                                    className={`${index === currentPath.length - 1 ? 'font-semibold' : 'hover:text-blue-600'} transition-colors duration-200`}
-                                    onClick={() => navigateToPath(index)}
-                                >
-                                    {folder}
-                                </button>
-                                {index < currentPath.length - 1 && (
-                                    <span className="text-gray-500">/</span>
-                                )}
-                            </React.Fragment>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            <div className="flex gap-2 mb-4">
-                <Button 
-                    onClick={handleNewFileClick} 
-                    disabled={isUploading}
-                >
-                    {isUploading ? (
-                        <>
-                            <span className="animate-spin mr-2">⟳</span>
-                            Uploading...
-                        </>
-                    ) : (
-                        `Upload${currentPath.length > 0 ? ' to ' + currentPath[currentPath.length - 1] : ''}`
+            {/* Title with breadcrumb navigation and action buttons */}
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center flex-wrap">
+                    <h2 className="text-2xl font-bold">
+                        <button
+                            onClick={() => setCurrentPath([])}
+                            className="hover:text-blue-600 transition-colors duration-200"
+                        >
+                            Home
+                        </button>
+                    </h2>
+                    {currentPath.length > 0 && (
+                        <div className="flex items-center gap-1 ml-2">
+                            <span className="text-gray-500">/</span>
+                            {currentPath.map((folder, index) => (
+                                <React.Fragment key={index}>
+                                    <button
+                                        className={`${index === currentPath.length - 1 ? 'font-semibold' : 'hover:text-blue-600'} transition-colors duration-200`}
+                                        onClick={() => navigateToPath(index)}
+                                    >
+                                        {folder}
+                                    </button>
+                                    {index < currentPath.length - 1 && (
+                                        <span className="text-gray-500">/</span>
+                                    )}
+                                </React.Fragment>
+                            ))}
+                        </div>
                     )}
-                </Button>
-                <Button onClick={toggleFolderModal}>
-                    New Folder{currentPath.length > 0 ? ' in ' + currentPath[currentPath.length - 1] : ''}
-                </Button>
-                <input
-                    type="file"
-                    accept=".pdf,.txt"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    className="hidden"
-                />
+                </div>
+                
+                <div className="flex gap-2">
+                    <Button 
+                        onClick={handleNewFileClick} 
+                        disabled={isUploading}
+                        size="sm"
+                    >
+                        {isUploading ? (
+                            <>
+                                <span className="animate-spin mr-2">⟳</span>
+                                Uploading...
+                            </>
+                        ) : (
+                            `Upload${currentPath.length > 0 ? ' to ' + currentPath[currentPath.length - 1] : ''}`
+                        )}
+                    </Button>
+                    <Button onClick={toggleFolderModal} size="sm">
+                        New Folder{currentPath.length > 0 ? ' in ' + currentPath[currentPath.length - 1] : ''}
+                    </Button>
+                    <input
+                        type="file"
+                        accept=".pdf,.txt"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        className="hidden"
+                    />
+                </div>
             </div>
 
             {currentItems.length === 0 ? (
@@ -453,16 +542,7 @@ export default function FileManager() {
                                 {item.type === 'file' ? (
                                     <span
                                         className="text-blue-500 cursor-pointer flex items-center"
-                                        onClick={() => {
-                                            const event = new CustomEvent('displayFile', {
-                                                detail: { 
-                                                    filename: item.name, 
-                                                    object_key: item.object_key,  // Pass the object_key 
-                                                    pageLabel: '0' 
-                                                }
-                                            });
-                                            window.dispatchEvent(event);
-                                        }}
+                                        onClick={() => handleFileClick(item as FileItem)}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                                             <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />

@@ -1,9 +1,10 @@
 from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status, BackgroundTasks, Request, Form
 from fastapi.responses import StreamingResponse
-from typing import List, Annotated, Any
+from typing import List, Annotated, Any, Optional
 from minio import Minio
 import logging
 import urllib.parse
+import io
 from pydantic import BaseModel
 from .dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client, get_pg_client
 from .embedding_utils import process_document_embeddings
@@ -16,6 +17,63 @@ router = APIRouter(prefix="/storage", tags=["storage"])
 class Response(BaseModel):
     message: str
     fileinfo: FileInfo
+
+class FolderRequest(BaseModel):
+    folder_name: str
+    folder_path: Optional[str] = None
+    
+class FolderResponse(BaseModel):
+    message: str
+    folder_info: dict
+
+@router.post("/create_folder")
+async def create_folder(
+    request: FolderRequest,
+    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
+) -> FolderResponse:
+    """Create a virtual folder in MinIO storage"""
+    logger.info(f"Create folder endpoint triggered: {request.folder_name} in path {request.folder_path}")
+    
+    try:
+        # Build the full folder path
+        folder_path = ""
+        if request.folder_path:
+            folder_path = request.folder_path.strip('/') + '/'
+        
+        # Full path including the new folder name
+        full_path = f"{folder_path}{request.folder_name}/"
+        
+        # Create an empty placeholder file to represent the folder
+        # MinIO doesn't have real folders, so we use a placeholder object
+        placeholder_key = f"{full_path}.folder"
+        
+        # Upload an empty file as a placeholder
+        minio_client.put_object(
+            bucket_name=BUCKET_NAME,
+            object_name=placeholder_key,
+            data=io.BytesIO(b''),  # Empty content
+            length=0,  # Content length (zero)
+            content_type="application/octet-stream",
+            metadata={
+                "folder_name": request.folder_name
+            }
+        )
+        
+        logger.info(f"Folder created successfully: {full_path}")
+        
+        return FolderResponse(
+            message="Folder created successfully",
+            folder_info={
+                "name": request.folder_name,
+                "path": full_path
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error creating folder: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Error creating folder: {str(e)}"
+        )
 
 @router.post("/upload")
 async def upload_document(
