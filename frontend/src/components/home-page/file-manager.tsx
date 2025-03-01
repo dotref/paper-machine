@@ -6,15 +6,30 @@ import { FolderDialog } from "./folder-dialog";
 interface FileItem {
     name: string;
     type: 'file';
+    object_key?: string; // MinIO object key
 }
 
 interface FolderItem {
     name: string;
     type: 'folder';
-    files: FileItem[];
+    files: (FileItem | FolderItem)[];
 }
 
 type Item = FileItem | FolderItem;
+
+// API response interfaces
+interface FileInfo {
+    object_key: string;
+    metadata: {
+        file_name: string;
+        content_type: string;
+    };
+}
+
+interface UploadResponse {
+    message: string;
+    fileinfo: FileInfo;
+}
 
 export default function FileManager() {
     const [items, setItems] = useState<Item[]>([]);
@@ -33,26 +48,29 @@ export default function FileManager() {
 
     // Convert backend files to our format when fetched
     useEffect(() => {
-        const fetchFiles = async () => {
-            try {
-                const response = await fetch('http://localhost:5000/files');
-                if (!response.ok) throw new Error('Failed to fetch files');
-                const data = await response.json();
-
-                // Convert string array to FileItem array
-                const fileItems: FileItem[] = data.files.map((filename: string) => ({
-                    name: filename,
-                    type: 'file'
-                }));
-
-                setItems(fileItems);
-            } catch (error) {
-                console.error('Error fetching files:', error);
-                setStatusMessage("Error loading files");
-            }
-        };
         fetchFiles();
     }, []);
+
+    const fetchFiles = async () => {
+        try {
+            // Use the storage/list endpoint as defined in router.py
+            const response = await fetch('http://localhost:5000/storage/list');
+            if (!response.ok) throw new Error('Failed to fetch files');
+            const data = await response.json() as FileInfo[];
+            
+            // Convert FileInfo array to FileItem array
+            const fileItems: FileItem[] = data.map((fileInfo: FileInfo) => ({
+                name: fileInfo.metadata.file_name,
+                type: 'file',
+                object_key: fileInfo.object_key
+            }));
+            
+            setItems(fileItems);
+        } catch (error) {
+            console.error('Error fetching files:', error);
+            setStatusMessage("Error loading files");
+        }
+    };
 
     // Filter items based on current path
     useEffect(() => {
@@ -92,19 +110,24 @@ export default function FileManager() {
 
     const uploadNewFile = async (file: File) => {
         setIsUploading(true);
+        setStatusMessage("Uploading file...");
         const formData = new FormData();
         formData.append('file', file);
 
         try {
-            const response = await fetch('http://localhost:5000/upload', {
+            // Use the storage/upload endpoint as defined in router.py
+            const response = await fetch('http://localhost:5000/storage/upload', {
                 method: 'POST',
                 body: formData,
             });
-            const data = await response.json();
+            
+            const data = await response.json() as UploadResponse;
+            
             if (response.ok) {
                 const newFile: FileItem = {
-                    name: data.filename,
-                    type: 'file'
+                    name: data.fileinfo.metadata.file_name,
+                    type: 'file',
+                    object_key: data.fileinfo.object_key
                 };
 
                 if (currentPath.length === 0) {
@@ -116,7 +139,10 @@ export default function FileManager() {
                     setItems(updatedItems);
                 }
 
-                setStatusMessage(`New file "${data.filename}" added.`);
+                setStatusMessage(`File "${data.fileinfo.metadata.file_name}" uploaded successfully.`);
+                
+                // Refresh file list to ensure we have the latest data
+                fetchFiles();
             } else {
                 setStatusMessage(data.message || 'Upload failed');
             }
@@ -210,22 +236,33 @@ export default function FileManager() {
 
     const removeItem = async (itemName: string) => {
         const itemToRemove = currentItems.find(item => item.name === itemName);
-
+        
         if (!itemToRemove) {
             setStatusMessage("Item not found");
             return;
         }
-
+        
         if (itemToRemove.type === 'file' && currentPath.length === 0) {
             // Only delete files from backend if they're at the root level
             try {
-                const response = await fetch(`http://localhost:5000/remove/${itemName}`, {
+                // Use the object_key for removal via the storage/remove endpoint
+                if (!itemToRemove.object_key) {
+                    throw new Error("File has no object key");
+                }
+                
+                // Use the storage/remove endpoint as defined in router.py
+                const response = await fetch(`http://localhost:5000/storage/remove/${itemToRemove.object_key}`, {
                     method: 'DELETE',
                 });
+                
                 const data = await response.json();
+                
                 if (response.ok) {
                     setItems(prev => prev.filter(item => item.name !== itemName));
                     setStatusMessage("File removed successfully");
+                    
+                    // Refresh file list
+                    fetchFiles();
                 } else {
                     setStatusMessage(data.message || "Remove failed");
                 }
@@ -234,12 +271,12 @@ export default function FileManager() {
                 setStatusMessage("Error removing file");
             }
         } else {
-            // Remove item from the current path
+            // Just handle local folders in the frontend
             const updatedItems = removeItemFromPath(items, currentPath, itemName);
             setItems(updatedItems);
             setStatusMessage(`${itemToRemove.type === 'file' ? 'File' : 'Folder'} removed successfully`);
         }
-
+        
         setFileToRemove(null);
     };
 
@@ -325,7 +362,7 @@ export default function FileManager() {
                     {currentPath.length === 0
                         ? <i>Your files will appear here.</i>
                         : <i>This folder is empty.</i>
-                        }
+                    }
                 </p>
             ) : (
                 <ul className="space-y-2">
@@ -337,7 +374,11 @@ export default function FileManager() {
                                         className="text-blue-500 cursor-pointer flex items-center"
                                         onClick={() => {
                                             const event = new CustomEvent('displayFile', {
-                                                detail: { filename: encodeURIComponent(item.name), pageLabel: '0' }
+                                                detail: { 
+                                                    filename: item.name, 
+                                                    object_key: item.object_key,  // Pass the object_key 
+                                                    pageLabel: '0' 
+                                                }
                                             });
                                             window.dispatchEvent(event);
                                         }}

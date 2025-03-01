@@ -8,6 +8,9 @@ RUN pip install --no-cache-dir pip==23.3.1
 # Copy requirements file
 COPY requirements/requirements.txt ./requirements.txt
 
+RUN pip install --no-cache-dir torch==2.1.0 torchvision==0.16.0 \
+    --index-url https://download.pytorch.org/whl/cpu
+
 # Install dependencies and verify no conflicts
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip check

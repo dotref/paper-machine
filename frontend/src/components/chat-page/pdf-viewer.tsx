@@ -32,16 +32,29 @@ export default function PdfViewer() {
 
     useEffect(() => {
         const handleDisplayFile = async (event: CustomEvent) => {
-            const { filename, pageLabel } = event.detail;
+            const { filename, object_key, pageLabel } = event.detail;
             try {
-                const response = await fetch(`http://localhost:5000/uploads/${filename}`);
-                if (!response.ok) throw new Error('Failed to fetch file');
-
-                const blob = await response.blob();
+                // Use the storage/serve endpoint when object_key is available
+                let url;
+                
+                if (object_key) {
+                    // Use the storage/serve endpoint as defined in router.py
+                    const response = await fetch(`http://localhost:5000/storage/serve/${object_key}`);
+                    if (!response.ok) throw new Error('Failed to fetch file from storage');
+                    
+                    const blob = await response.blob();
+                    url = URL.createObjectURL(blob);
+                } else {
+                    // Fall back to the old method if no object_key
+                    const response = await fetch(`http://localhost:5000/uploads/${filename}`);
+                    if (!response.ok) throw new Error('Failed to fetch file');
+                    
+                    const blob = await response.blob();
+                    url = URL.createObjectURL(blob);
+                }
+                
                 const type = getFileType(filename);
                 setFileType(type);
-
-                let url = URL.createObjectURL(blob);
 
                 // For PDFs, add the page parameter
                 if (type === 'pdf') {
@@ -154,42 +167,39 @@ export default function PdfViewer() {
     };
 
     return (
-        <div className="flex flex-col w-full h-full border rounded-lg">
-            <div className="border-b p-3 font-semibold">
-                {uploadStatus?.filename || "Document Viewer"}
-            </div>
-            
-            {/* Viewer area - takes all available space */}
-            <div className="flex-grow relative overflow-hidden">
-                {fileUrl ? (
-                    fileType === 'txt' ? (
-                        <iframe
-                            src={fileUrl}
-                            className="absolute inset-0 w-full h-full border-none bg-white"
-                            title="Text Viewer"
-                        />
-                    ) : fileType === 'pdf' ? (
-                        <object
-                            data={fileUrl}
-                            type="application/pdf"
-                            className="absolute inset-0 w-full h-full"
-                        >
-                            <p>Unable to display PDF. <a href={fileUrl}>Download</a> instead.</p>
-                        </object>
-                    ) : (
-                        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="flex flex-col h-full space-y-4">
+            <div className="flex-grow border rounded-lg overflow-auto">
+                {fileUrl && (
+                    <>
+                        <div className="border-b p-2 font-semibold">
+                            {uploadStatus?.filename}
+                        </div>
+                        {fileType === 'txt' ? (
+                            <iframe
+                                src={fileUrl}
+                                className="w-full h-full border-none bg-white"
+                                title="Text Viewer"
+                            />
+                        ) : fileType === 'pdf' ? (
+                            <object
+                                data={fileUrl}
+                                type="application/pdf"
+                                className="w-full h-full"
+                                style={{ width: '100%' }}
+                            >
+                                <p>Unable to display PDF. <a href={fileUrl}>Download</a> instead.</p>
+                            </object>
+                        ) : (
                             <Image
                                 src={fileUrl}
                                 alt={uploadStatus?.filename || 'Uploaded file'}
-                                layout="fill"
-                                objectFit="contain"
+                                layout="responsive"
+                                width={700}
+                                height={475}
+                                className="max-w-full h-auto"
                             />
-                        </div>
-                    )
-                ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                        <p>No document selected</p>
-                    </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>
