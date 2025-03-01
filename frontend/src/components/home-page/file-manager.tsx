@@ -53,22 +53,77 @@ export default function FileManager() {
 
     const fetchFiles = async () => {
         try {
-            // Use the storage/list endpoint as defined in router.py
             const response = await fetch('http://localhost:5000/storage/list');
             if (!response.ok) throw new Error('Failed to fetch files');
             const data = await response.json() as FileInfo[];
             
-            // Convert FileInfo array to FileItem array
-            const fileItems: FileItem[] = data.map((fileInfo: FileInfo) => ({
-                name: fileInfo.metadata.file_name,
-                type: 'file',
-                object_key: fileInfo.object_key
-            }));
-            
-            setItems(fileItems);
+            // Process the flat file list into a folder structure
+            const processedItems = processFilesIntoFolderStructure(data);
+            setItems(processedItems);
         } catch (error) {
             console.error('Error fetching files:', error);
             setStatusMessage("Error loading files");
+        }
+    };
+    
+    // New function to process files into a folder structure
+    const processFilesIntoFolderStructure = (files: FileInfo[]): Item[] => {
+        const root: Item[] = [];
+        
+        files.forEach(fileInfo => {
+            // Get the path segments from the object_key
+            const objectPath = fileInfo.object_key;
+            const pathSegments = objectPath.split('/');
+            
+            // If no folder path (no slashes), just add file to root
+            if (pathSegments.length === 1) {
+                root.push({
+                    name: fileInfo.metadata.file_name,
+                    type: 'file',
+                    object_key: fileInfo.object_key
+                });
+            } else {
+                // We have a file inside a folder structure
+                const fileName = fileInfo.metadata.file_name;
+                const folderPath = pathSegments.slice(0, -1); // All except the last segment
+                
+                // Add file to the correct folder in the hierarchy
+                addFileToNestedFolder(root, folderPath, {
+                    name: fileName,
+                    type: 'file',
+                    object_key: fileInfo.object_key
+                });
+            }
+        });
+        
+        return root;
+    };
+    
+    // Helper to add file to nested folder structure
+    const addFileToNestedFolder = (items: Item[], folderPath: string[], file: FileItem) => {
+        // Get the current folder name we're looking for
+        const currentFolder = folderPath[0];
+        
+        // Find or create the folder at this level
+        let folder = items.find(
+            item => item.type === 'folder' && item.name === currentFolder
+        ) as FolderItem | undefined;
+        
+        if (!folder) {
+            folder = {
+                name: currentFolder,
+                type: 'folder',
+                files: []
+            };
+            items.push(folder);
+        }
+        
+        // If we have more folders in the path, recurse
+        if (folderPath.length > 1) {
+            addFileToNestedFolder(folder.files, folderPath.slice(1), file);
+        } else {
+            // We've reached the target folder, add the file
+            folder.files.push(file);
         }
     };
 
@@ -113,9 +168,14 @@ export default function FileManager() {
         setStatusMessage("Uploading file...");
         const formData = new FormData();
         formData.append('file', file);
+        
+        // Add current path as a form field if we're in a folder
+        if (currentPath.length > 0) {
+            formData.append('folder_path', currentPath.join('/'));
+        }
 
         try {
-            // Use the storage/upload endpoint as defined in router.py
+            // Use the storage/upload endpoint
             const response = await fetch('http://localhost:5000/storage/upload', {
                 method: 'POST',
                 body: formData,
@@ -130,18 +190,19 @@ export default function FileManager() {
                     object_key: data.fileinfo.object_key
                 };
 
+                // Handle uploading to current path
                 if (currentPath.length === 0) {
-                    // Add file to root
+                    // Add file to root level
                     setItems(prev => [...prev, newFile]);
                 } else {
-                    // Add file to current folder
+                    // Add file to the current folder
                     const updatedItems = addFileToFolder(items, currentPath, newFile);
                     setItems(updatedItems);
                 }
 
                 setStatusMessage(`File "${data.fileinfo.metadata.file_name}" uploaded successfully.`);
                 
-                // Refresh file list to ensure we have the latest data
+                // Refresh items to ensure we have the latest data
                 fetchFiles();
             } else {
                 setStatusMessage(data.message || 'Upload failed');
@@ -154,18 +215,28 @@ export default function FileManager() {
         }
     };
 
-    // Helper function to add a file to a nested folder
+    // Helper function to add a file to a nested folder - improved to handle deep paths better
     const addFileToFolder = (items: Item[], path: string[], newFile: FileItem): Item[] => {
         if (path.length === 0) return [...items, newFile];
-
+        
+        const currentFolder = path[0];
+        const remainingPath = path.slice(1);
+        
         return items.map(item => {
-            if (item.type === 'folder' && item.name === path[0]) {
-                return {
-                    ...item,
-                    files: path.length === 1
-                        ? [...item.files, newFile]
-                        : addFileToFolder(item.files, path.slice(1), newFile)
-                };
+            if (item.type === 'folder' && item.name === currentFolder) {
+                if (remainingPath.length === 0) {
+                    // We've reached the target folder, add the file here
+                    return {
+                        ...item,
+                        files: [...item.files, newFile]
+                    };
+                } else {
+                    // Need to go deeper into the folder structure
+                    return {
+                        ...item,
+                        files: addFileToFolder(item.files, remainingPath, newFile)
+                    };
+                }
             }
             return item;
         });
@@ -342,11 +413,21 @@ export default function FileManager() {
             </div>
 
             <div className="flex gap-2 mb-4">
-                <Button onClick={handleNewFileClick} disabled={isUploading}>
-                    Upload File
+                <Button 
+                    onClick={handleNewFileClick} 
+                    disabled={isUploading}
+                >
+                    {isUploading ? (
+                        <>
+                            <span className="animate-spin mr-2">⟳</span>
+                            Uploading...
+                        </>
+                    ) : (
+                        `Upload${currentPath.length > 0 ? ' to ' + currentPath[currentPath.length - 1] : ''}`
+                    )}
                 </Button>
                 <Button onClick={toggleFolderModal}>
-                    New Folder
+                    New Folder{currentPath.length > 0 ? ' in ' + currentPath[currentPath.length - 1] : ''}
                 </Button>
                 <input
                     type="file"

@@ -1,4 +1,4 @@
-from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status, BackgroundTasks, Request
+from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status, BackgroundTasks, Request, Form
 from fastapi.responses import StreamingResponse
 from typing import List, Annotated, Any
 from minio import Minio
@@ -21,13 +21,22 @@ async def upload_document(
     request: Request,
     uploadinfo: Annotated[UploadFile, Depends(validate_upload)],
     background_tasks: BackgroundTasks,
+    folder_path: str = Form(None),  # Add folder_path parameter
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
     pgvector_client: Annotated[Any, Depends(get_pg_client)] = None
 ) -> Response:
     """Upload a document to MinIO storage and start embedding creation in background"""
-    logger.info("Upload endpoint triggered")
+    logger.info(f"Upload endpoint triggered with folder_path: {folder_path}")
 
     fileinfo = uploadinfo.fileinfo
+    
+    # If folder_path is provided, update the object_key to include the folder path
+    if folder_path:
+        # Clean up the folder path and add to object key
+        folder_path = folder_path.strip('/') + '/'  # Ensure it has trailing slash but no leading slash
+        # Update object key with folder path prefix
+        fileinfo.object_key = f"{folder_path}{fileinfo.object_key}"
+        logger.info(f"Updated object key with folder path: {fileinfo.object_key}")
 
     # File is a duplicate, no need to reupload
     # TODO: in the scenario where multiple users try to upload the same file,

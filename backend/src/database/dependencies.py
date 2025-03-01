@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status, UploadFile
+from fastapi import Depends, HTTPException, status, UploadFile, Form, File
 from minio import Minio
 from minio.error import S3Error
 import psycopg2
@@ -115,8 +115,9 @@ async def validate_file(
     return file
 
 async def validate_upload(
-    file: Annotated[UploadFile, Depends(validate_file)],
-    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
+    file: UploadFile = File(...),
+    folder_path: str = Form(None),  # Add folder_path parameter
+    minio_client: Minio = Depends(get_minio_client)
 ) -> UploadInfo:
     """
     Validates an uploaded file, including checking if it is a duplicate.
