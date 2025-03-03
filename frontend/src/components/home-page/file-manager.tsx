@@ -372,6 +372,7 @@ export default function FileManager() {
         setFileToRemove(null);
     };
 
+    // Updated removeItem function to handle both files and folders properly in the backend
     const removeItem = async (itemName: string) => {
         const itemToRemove = currentItems.find(item => item.name === itemName);
         
@@ -380,15 +381,13 @@ export default function FileManager() {
             return;
         }
         
-        if (itemToRemove.type === 'file' && currentPath.length === 0) {
-            // Only delete files from backend if they're at the root level
-            try {
-                // Use the object_key for removal via the storage/remove endpoint
+        try {
+            if (itemToRemove.type === 'file') {
+                // Handle file removal
                 if (!itemToRemove.object_key) {
                     throw new Error("File has no object key");
                 }
                 
-                // Use the storage/remove endpoint as defined in router.py
                 const response = await fetch(`http://localhost:5000/storage/remove/${itemToRemove.object_key}`, {
                     method: 'DELETE',
                 });
@@ -396,23 +395,55 @@ export default function FileManager() {
                 const data = await response.json();
                 
                 if (response.ok) {
-                    setItems(prev => prev.filter(item => item.name !== itemName));
                     setStatusMessage("File removed successfully");
-                    
-                    // Refresh file list
-                    fetchFiles();
                 } else {
                     setStatusMessage(data.message || "Remove failed");
+                    return;
                 }
-            } catch (error) {
-                console.error('Error removing file:', error);
-                setStatusMessage("Error removing file");
+            } else {
+                // Handle folder removal with the new endpoint
+                // Build the full folder path
+                const folderPath = currentPath.length > 0 
+                    ? `${currentPath.join('/')}/${itemName}`
+                    : itemName;
+                
+                const response = await fetch('http://localhost:5000/storage/remove_folder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        folder_path: folderPath
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    setStatusMessage(errorData.detail || "Failed to remove folder");
+                    return;
+                }
+                
+                const data = await response.json();
+                setStatusMessage(`Folder "${itemName}" and its contents removed successfully`);
             }
-        } else {
-            // Just handle local folders in the frontend
-            const updatedItems = removeItemFromPath(items, currentPath, itemName);
-            setItems(updatedItems);
-            setStatusMessage(`${itemToRemove.type === 'file' ? 'File' : 'Folder'} removed successfully`);
+            
+            // Update UI state by removing the item
+            setItems(prev => {
+                if (currentPath.length === 0) {
+                    // At root level, just filter out the removed item
+                    return prev.filter(item => item.name !== itemName);
+                } else {
+                    // Remove from nested folder
+                    return removeItemFromPath(prev, currentPath, itemName);
+                }
+            });
+            
+            // Refresh the file list to ensure the UI is in sync with the backend
+            fetchFiles();
+            
+        } catch (error) {
+            console.error('Error removing item:', error);
+            setStatusMessage(`Error removing ${itemToRemove.type}`);
         }
         
         setFileToRemove(null);
@@ -480,8 +511,8 @@ export default function FileManager() {
                         </button>
                     </h2>
                     {currentPath.length > 0 && (
-                        <div className="flex items-center gap-1 ml-2">
-                            <span className="text-gray-500">/</span>
+                        <div className="text-xl flexitems-center gap-1 ml-2">
+                            <span className="text-gray-500">/ </span>
                             {currentPath.map((folder, index) => (
                                 <React.Fragment key={index}>
                                     <button
@@ -491,7 +522,7 @@ export default function FileManager() {
                                         {folder}
                                     </button>
                                     {index < currentPath.length - 1 && (
-                                        <span className="text-gray-500">/</span>
+                                        <span className="text-gray-500"> / </span>
                                     )}
                                 </React.Fragment>
                             ))}

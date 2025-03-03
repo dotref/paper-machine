@@ -18,6 +18,7 @@ class Response(BaseModel):
     message: str
     fileinfo: FileInfo
 
+# Add these new models for folder operations
 class FolderRequest(BaseModel):
     folder_name: str
     folder_path: Optional[str] = None
@@ -26,54 +27,13 @@ class FolderResponse(BaseModel):
     message: str
     folder_info: dict
 
-@router.post("/create_folder")
-async def create_folder(
-    request: FolderRequest,
-    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
-) -> FolderResponse:
-    """Create a virtual folder in MinIO storage"""
-    logger.info(f"Create folder endpoint triggered: {request.folder_name} in path {request.folder_path}")
-    
-    try:
-        # Build the full folder path
-        folder_path = ""
-        if request.folder_path:
-            folder_path = request.folder_path.strip('/') + '/'
-        
-        # Full path including the new folder name
-        full_path = f"{folder_path}{request.folder_name}/"
-        
-        # Create an empty placeholder file to represent the folder
-        # MinIO doesn't have real folders, so we use a placeholder object
-        placeholder_key = f"{full_path}.folder"
-        
-        # Upload an empty file as a placeholder
-        minio_client.put_object(
-            bucket_name=BUCKET_NAME,
-            object_name=placeholder_key,
-            data=io.BytesIO(b''),  # Empty content
-            length=0,  # Content length (zero)
-            content_type="application/octet-stream",
-            metadata={
-                "folder_name": request.folder_name
-            }
-        )
-        
-        logger.info(f"Folder created successfully: {full_path}")
-        
-        return FolderResponse(
-            message="Folder created successfully",
-            folder_info={
-                "name": request.folder_name,
-                "path": full_path
-            }
-        )
-    except Exception as e:
-        logger.error(f"Error creating folder: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail=f"Error creating folder: {str(e)}"
-        )
+class RemoveFolderRequest(BaseModel):
+    folder_path: str
+
+class RemoveFolderResponse(BaseModel):
+    message: str
+    folder_path: str
+    removed_objects: List[str]
 
 @router.post("/upload")
 async def upload_document(
@@ -267,4 +227,112 @@ async def list_files(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error listing files: {str(e)}"
+        )
+
+@router.post("/create_folder")
+async def create_folder(
+    request: FolderRequest,
+    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
+) -> FolderResponse:
+    """Create a virtual folder in MinIO storage"""
+    logger.info(f"Create folder endpoint triggered: {request.folder_name} in path {request.folder_path}")
+    
+    try:
+        # Build the full folder path
+        folder_path = ""
+        if request.folder_path:
+            folder_path = request.folder_path.strip('/') + '/'
+        
+        # Full path including the new folder name
+        full_path = f"{folder_path}{request.folder_name}/"
+        
+        # Create an empty placeholder file to represent the folder
+        # MinIO doesn't have real folders, so we use a placeholder object
+        placeholder_key = f"{full_path}.folder"
+        
+        # Upload an empty file as a placeholder
+        minio_client.put_object(
+            bucket_name=BUCKET_NAME,
+            object_name=placeholder_key,
+            data=io.BytesIO(b''),  # Empty content
+            length=0,  # Content length (zero)
+            content_type="application/octet-stream",
+            metadata={
+                "folder_name": request.folder_name
+            }
+        )
+        
+        logger.info(f"Folder created successfully: {full_path}")
+        
+        return FolderResponse(
+            message="Folder created successfully",
+            folder_info={
+                "name": request.folder_name,
+                "path": full_path
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error creating folder: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Error creating folder: {str(e)}"
+        )
+
+@router.post("/remove_folder")
+async def remove_folder(
+    request: RemoveFolderRequest,
+    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
+) -> RemoveFolderResponse:
+    """Remove a folder and all its contents from MinIO storage"""
+    folder_path = request.folder_path.strip('/')
+    if not folder_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Folder path is required"
+        )
+    
+    # Add trailing slash to match all objects with this prefix
+    prefix = f"{folder_path}/"
+    logger.info(f"Removing folder: {prefix}")
+    
+    try:
+        # List all objects with the folder prefix
+        objects = list(minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True))
+        
+        # Also include the folder marker if it exists
+        folder_marker_objects = list(minio_client.list_objects(
+            BUCKET_NAME, 
+            prefix=f"{prefix}.folder", 
+            recursive=False
+        ))
+        objects.extend(folder_marker_objects)
+        
+        # If no objects found, folder doesn't exist
+        if not objects:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Folder '{folder_path}' not found or is empty"
+            )
+        
+        # Remove all objects in the folder
+        removed_objects = []
+        for obj in objects:
+            minio_client.remove_object(BUCKET_NAME, obj.object_name)
+            removed_objects.append(obj.object_name)
+            logger.info(f"Removed object: {obj.object_name}")
+        
+        return RemoveFolderResponse(
+            message=f"Folder '{folder_path}' and {len(removed_objects)} objects removed successfully",
+            folder_path=folder_path,
+            removed_objects=removed_objects
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error removing folder: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error removing folder: {str(e)}"
         )
