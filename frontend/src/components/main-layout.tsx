@@ -1,6 +1,6 @@
 import React from "react";
 import MenuBar from "./menu-bar";
-import { Sidebar } from "./Sidebar";
+import { Sidebar } from "./sidebar";
 
 interface MainLayoutProps {
 	children: React.ReactNode;

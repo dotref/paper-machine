@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: testpwd
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - ./src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backend/src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - pg-data:/var/lib/postgresql/data
 
   pgadmin:
@@ -50,7 +50,7 @@ services:
 
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: fastapi-backend
     ports:
@@ -67,10 +67,25 @@ services:
       - POSTGRES_PASSWORD=testpwd
       - POSTGRES_HOST_AUTH_METHOD=trust
     volumes:
-      - ./src:/app/src
+      - ./backend/src:/app/src
     depends_on:
       minio:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: react-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    depends_on:
+      - backend
 
 volumes:
   pg-data:
