@@ -12,7 +12,7 @@ In the root directory, run the command below. Reload is on, so saved changes to 
 docker-compose up --build
 ```
 
-### To run the application
+### To use the app
 
 Visit `localhost:3000`
 
