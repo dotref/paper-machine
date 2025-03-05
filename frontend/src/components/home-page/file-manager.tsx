@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { FolderDialog } from "./folder-dialog";
+import FilePreview from "./file-preview";
+import { Cross2Icon } from "@radix-ui/react-icons";
 
 // Define types for files and folders
 interface FileItem {
@@ -38,6 +40,7 @@ export default function FileManager() {
     const [fileToRemove, setFileToRemove] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState("");
     const [isUploading, setIsUploading] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
     // Ref for hidden file input
     const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -50,6 +53,11 @@ export default function FileManager() {
     useEffect(() => {
         fetchFiles();
     }, []);
+
+    // Clear selected file when changing folders
+    useEffect(() => {
+        setSelectedFile(null);
+    }, [currentPath]);
 
     const fetchFiles = async () => {
         try {
@@ -478,23 +486,25 @@ export default function FileManager() {
         setCurrentPath(currentPath.slice(0, index + 1));
     };
 
-    // Update the file click handler to prevent clicking on .folder files
-    // This adds an extra safety check in case a .folder file somehow gets displayed
+    // Updated handleFileClick function to toggle preview when clicking the same file
     const handleFileClick = (item: FileItem) => {
         // Skip .folder placeholder files
         if (item.object_key?.endsWith('.folder')) {
             return;
         }
 
-        // Dispatch the file display event
-        const event = new CustomEvent('displayFile', {
-            detail: {
-                filename: item.name,
-                object_key: item.object_key,
-                pageLabel: '0'
-            }
-        });
-        window.dispatchEvent(event);
+        // Toggle the file selection (close if already selected)
+        if (selectedFile && selectedFile.name === item.name) {
+            setSelectedFile(null);
+        } else {
+            // Set the selected file for preview
+            setSelectedFile(item);
+        }
+    };
+
+    // Function to close the preview
+    const closePreview = () => {
+        setSelectedFile(null);
     };
 
     return (
@@ -558,48 +568,100 @@ export default function FileManager() {
                 </div>
             </div>
 
-            <ul className="divide-y divide-gray-200">
-                {currentItems.map((item, index) => (
-                    <li key={index} className="rounded-lg pl-3 flex flex-col py-3 hover:bg-gray-50 transition-colors">
-                        <div className="flex justify-between items-center">
-                            {item.type === 'file' ? (
-                                <span
-                                    className="text-blue-500 cursor-pointer flex items-center"
-                                    onClick={() => handleFileClick(item as FileItem)}
+            {/* Main content area - conditional rendering based on file selection */}
+            <div className="flex gap-6">
+                {/* Files and folders list - adjusts width based on selection */}
+                <div className={selectedFile ? "w-1/2" : "w-full"}>
+                    <ul className="divide-y divide-gray-200 rounded-lg border">
+                        {currentItems.map((item, index) => (
+                            <li 
+                                key={index} 
+                                className={`rounded-lg pl-3 flex flex-col py-3 hover:bg-gray-50 transition-colors ${
+                                    selectedFile && item.type === 'file' && item.name === selectedFile.name ? 'bg-blue-50' : ''
+                                }`}
+                            >
+                                <div 
+                                    className="flex justify-between items-center w-full cursor-pointer" 
+                                    onClick={() => item.type === 'file' 
+                                        ? handleFileClick(item as FileItem) 
+                                        : enterFolder(item.name)
+                                    }
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                                    </svg>
-                                    {item.name}
-                                </span>
-                            ) : (
-                                <span
-                                    className="text-yellow-600 cursor-pointer flex items-center"
-                                    onClick={() => enterFolder(item.name)}
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                                        <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                                    </svg>
-                                    {item.name}
-                                </span>
-                            )}
-                            <Button variant="ghost" className="text-red-500" onClick={() => confirmRemove(item.name)}>
-                                Remove
-                            </Button>
-                        </div>
-                        {fileToRemove === item.name && (
-                            <div className="flex justify-end space-x-2 mt-2">
-                                <Button variant="destructive" size="sm" onClick={() => removeItem(item.name)}>
-                                    Confirm
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={cancelRemove}>
-                                    Cancel
-                                </Button>
-                            </div>
+                                    {item.type === 'file' ? (
+                                        <span className="text-blue-500 flex items-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                                            </svg>
+                                            {item.name}
+                                        </span>
+                                    ) : (
+                                        <span className="text-yellow-600 flex items-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                                            </svg>
+                                            {item.name}
+                                        </span>
+                                    )}
+                                    <Button 
+                                        variant="ghost" 
+                                        className="text-red-500" 
+                                        onClick={(e) => {
+                                            e.stopPropagation(); // Prevent triggering the parent's onClick
+                                            confirmRemove(item.name);
+                                        }}
+                                    >
+                                        Remove
+                                    </Button>
+                                </div>
+                                {fileToRemove === item.name && (
+                                    <div className="flex justify-end space-x-2 mt-2">
+                                        <Button 
+                                            variant="destructive" 
+                                            size="sm" 
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // Prevent triggering the parent's onClick
+                                                removeItem(item.name);
+                                            }}
+                                        >
+                                            Confirm
+                                        </Button>
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // Prevent triggering the parent's onClick
+                                                cancelRemove();
+                                            }}
+                                        >
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                )}
+                            </li>
+                        ))}
+                        {currentItems.length === 0 && (
+                            <li className="py-6 text-center text-gray-500">
+                                No items in this folder
+                            </li>
                         )}
-                    </li>
-                ))}
-            </ul>
+                    </ul>
+                </div>
+
+                {/* File Preview Panel - only show when a file is selected */}
+                {selectedFile && (
+                    <div className="w-1/2 h-[70vh] relative">
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="absolute right-2 top-2 z-10 p-1 h-8 w-8"
+                            onClick={closePreview}
+                        >
+                            <Cross2Icon className="h-5 w-5" />
+                        </Button>
+                        <FilePreview selectedFile={selectedFile} />
+                    </div>
+                )}
+            </div>
 
             {statusMessage && (
                 <div className="mt-4 p-2 border rounded-lg text-center text-sm text-gray-700">
