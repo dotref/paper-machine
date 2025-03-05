@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { FolderDialog } from "./folder-dialog";
+import { FolderDialog } from "./create-folder-modal";
 import FilePreview from "./file-preview";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
