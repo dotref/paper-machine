@@ -572,7 +572,7 @@ export default function FileManager() {
             <div className="flex gap-6">
                 {/* Files and folders list - adjusts width based on selection */}
                 <div className={selectedFile ? "w-1/2" : "w-full"}>
-                    <ul className="divide-y divide-gray-200 rounded-lg border">
+                    <ul className="divide-y divide-gray-200 rounded-lg">
                         {currentItems.map((item, index) => (
                             <li 
                                 key={index} 
@@ -581,32 +581,36 @@ export default function FileManager() {
                                 }`}
                             >
                                 <div 
-                                    className="flex justify-between items-center w-full cursor-pointer" 
+                                    className="cursor-default flex justify-between items-center w-full" 
                                     onClick={() => item.type === 'file' 
                                         ? handleFileClick(item as FileItem) 
                                         : enterFolder(item.name)
                                     }
                                 >
                                     {item.type === 'file' ? (
-                                        <span className="text-blue-500 flex items-center">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                        <span className="text-blue-500 flex items-center min-w-0 overflow-hidden flex-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0 mr-2" viewBox="0 0 20 20" fill="currentColor">
                                                 <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
                                             </svg>
-                                            {item.name}
+                                            <span className="truncate" title={item.name}>
+                                                {item.name}
+                                            </span>
                                         </span>
                                     ) : (
-                                        <span className="text-yellow-600 flex items-center">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                        <span className="text-yellow-600 flex items-center min-w-0 overflow-hidden flex-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0 mr-2" viewBox="0 0 20 20" fill="currentColor">
                                                 <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
                                             </svg>
-                                            {item.name}
+                                            <span className="truncate" title={item.name}>
+                                                {item.name}
+                                            </span>
                                         </span>
                                     )}
                                     <Button 
                                         variant="ghost" 
-                                        className="text-red-500" 
+                                        className="text-red-500 ml-2 flex-shrink-0" 
                                         onClick={(e) => {
-                                            e.stopPropagation(); // Prevent triggering the parent's onClick
+                                            e.stopPropagation(); 
                                             confirmRemove(item.name);
                                         }}
                                     >
@@ -619,7 +623,7 @@ export default function FileManager() {
                                             variant="destructive" 
                                             size="sm" 
                                             onClick={(e) => {
-                                                e.stopPropagation(); // Prevent triggering the parent's onClick
+                                                e.stopPropagation();
                                                 removeItem(item.name);
                                             }}
                                         >
@@ -629,7 +633,7 @@ export default function FileManager() {
                                             variant="outline" 
                                             size="sm" 
                                             onClick={(e) => {
-                                                e.stopPropagation(); // Prevent triggering the parent's onClick
+                                                e.stopPropagation();
                                                 cancelRemove();
                                             }}
                                         >
