@@ -463,7 +463,7 @@ async def remove_folder_endpoint(
 async def get_storage_structure(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get a breakdown of the user's storage structure for diagnostic purposes"""
+    """TODO: Get a breakdown of the user's storage structure for diagnostic purposes"""
     try:
         user_id = current_user["id"]
         user_prefix = get_user_file_prefix(user_id)

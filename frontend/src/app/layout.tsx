@@ -1,9 +1,10 @@
+import { AuthProvider } from '@/context/auth-context'
+import './globals.css'
+
 export const metadata = {
     title: 'Paper Machine',
     description: 'Document management and chat interface',
 }
-
-import './globals.css'
 
 export default function RootLayout({
     children,
@@ -12,7 +13,11 @@ export default function RootLayout({
 }) {
     return (
         <html lang="en" suppressHydrationWarning>
-            <body suppressHydrationWarning>{children}</body>
+            <body suppressHydrationWarning>
+                <AuthProvider>
+                    {children}
+                </AuthProvider>
+            </body>
         </html>
     )
 }

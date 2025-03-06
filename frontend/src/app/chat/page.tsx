@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import MainLayout from "@/components/main-layout";
 import ChatInterface from "@/components/chat/chat-interface";
 import PdfViewer from "@/components/chat/pdf-viewer";
+import AuthGuard from "@/components/auth/auth-guard";
 
 export default function ChatPage() {
     const [selectedTab, setSelectedTab] = useState("chat");
@@ -35,20 +36,22 @@ export default function ChatPage() {
     };
 
     return (
-        <MainLayout selectedTab={selectedTab} onSelectTab={handleTabChange}>
-            <div className="grid grid-cols-2 gap-4 h-full" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                <div
-                    ref={chatColumnRef}
-                    className="h-full flex overflow-hidden"
-                >
-                    <ChatInterface />
+        <AuthGuard>
+            <MainLayout selectedTab={selectedTab} onSelectTab={handleTabChange}>
+                <div className="grid grid-cols-2 gap-4 h-full" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    <div
+                        ref={chatColumnRef}
+                        className="h-full flex overflow-hidden"
+                    >
+                        <ChatInterface />
+                    </div>
+                    <div
+                        ref={pdfColumnRef}
+                    >
+                        <PdfViewer />
+                    </div>
                 </div>
-                <div
-                    ref={pdfColumnRef}
-                >
-                    <PdfViewer />
-                </div>
-            </div>
-        </MainLayout>
+            </MainLayout>
+        </AuthGuard>
     );
 }

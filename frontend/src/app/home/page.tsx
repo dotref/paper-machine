@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import MainLayout from "@/components/main-layout";
 import FileManager from "@/components/home/file-manager";
+import AuthGuard from "@/components/auth/auth-guard";
 
 export default function HomePage() {
     const [selectedTab, setSelectedTab] = useState("home");
@@ -18,8 +19,10 @@ export default function HomePage() {
     };
 
     return (
-        <MainLayout selectedTab={selectedTab} onSelectTab={handleTabChange}>
-            <FileManager />
-        </MainLayout>
+        <AuthGuard>
+            <MainLayout selectedTab={selectedTab} onSelectTab={handleTabChange}>
+                <FileManager />
+            </MainLayout>
+        </AuthGuard>
     );
 }
