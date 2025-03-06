@@ -80,8 +80,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(storage_router)
-app.include_router(auth_router)  # Add auth router
+app.include_router(storage_router)  # Use the consolidated storage router
+app.include_router(auth_router)     # Authentication router
 
 # Index Route
 @app.get("/")

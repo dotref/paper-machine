@@ -1,6 +1,6 @@
-from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status, BackgroundTasks, Request, Form
+from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, status, BackgroundTasks, Request, Form, Query
 from fastapi.responses import StreamingResponse
-from typing import List, Annotated, Any, Optional
+from typing import List, Annotated, Any, Optional, Dict
 from minio import Minio
 import logging
 import urllib.parse
@@ -8,8 +8,18 @@ import io
 from pydantic import BaseModel
 from .dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client, get_pg_client
 from .embedding_utils import process_document_embeddings
-from .config import CUSTOM_CORPUS_BUCKET as BUCKET_NAME
 from .config import EMBED_ON
+from ..auth.auth_utils import get_current_user
+from ..storage.minio_client import (
+    upload_file,
+    download_file,
+    list_files,
+    remove_file,
+    create_folder,
+    get_user_file_prefix,
+    BUCKET_NAME
+)
+from ..database.database import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -40,32 +50,37 @@ async def upload_document(
     request: Request,
     uploadinfo: Annotated[UploadFile, Depends(validate_upload)],
     background_tasks: BackgroundTasks,
-    folder_path: str = Form(None),  # Add folder_path parameter
+    folder_path: str = Form(None),
+    current_user: dict = Depends(get_current_user),
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
-    pgvector_client: Annotated[Any, Depends(get_pg_client)] = None
+    pgvector_client: Annotated[Any, Depends(get_pg_client)] = None,
+    db = Depends(get_db)
 ) -> Response:
-    """Upload a document to MinIO storage and start embedding creation in background"""
-    logger.info(f"Upload endpoint triggered with folder_path: {folder_path}")
+    """Upload a document to user's storage area and start embedding creation in background"""
+    user_id = current_user["id"]
+    user_prefix = get_user_file_prefix(user_id)
+    logger.info(f"Upload endpoint triggered by user {user_id} with folder_path: {folder_path}")
 
     fileinfo = uploadinfo.fileinfo
     
-    # If folder_path is provided, update the object_key to include the folder path
+    # Add user prefix to the object key to ensure user-specific storage
+    # If folder_path is provided, it will be within the user's folder
     if folder_path:
-        # Clean up the folder path and add to object key
-        folder_path = folder_path.strip('/') + '/'  # Ensure it has trailing slash but no leading slash
-        # Update object key with folder path prefix
-        fileinfo.object_key = f"{folder_path}{fileinfo.object_key}"
-        logger.info(f"Updated object key with folder path: {fileinfo.object_key}")
+        # Clean up the folder path
+        folder_path = folder_path.strip('/')
+        # Update object key with user prefix and folder path
+        fileinfo.object_key = f"{user_prefix}{folder_path}/{fileinfo.object_key.split('/')[-1]}"
+    else:
+        # Just add user prefix
+        fileinfo.object_key = f"{user_prefix}{fileinfo.object_key.split('/')[-1]}"
+        
+    logger.info(f"Updated object key with user prefix: {fileinfo.object_key}")
 
     # File is a duplicate, no need to reupload
-    # TODO: in the scenario where multiple users try to upload the same file,
-    # we don't want to store the same file twice but we do want to make sure the
-    # user has access to the file with their credentials and metadata.
-    # Return object key (hash) and metadata
     if uploadinfo.duplicate:
         logger.info("File is a duplicate, no need to reupload")
         return Response(
-            message="File uploaded successfully", # Abstract duplicate checking from user
+            message="File uploaded successfully",
             fileinfo=fileinfo
         )
     
@@ -82,6 +97,23 @@ async def upload_document(
                 "content_type": fileinfo.metadata.content_type
             }
         )
+        
+        # Record file metadata in database
+        query = """
+        INSERT INTO user_files (user_id, object_key, original_filename, content_type)
+        VALUES (:user_id, :object_key, :original_filename, :content_type)
+        RETURNING id
+        """
+        
+        values = {
+            "user_id": user_id,
+            "object_key": fileinfo.object_key,
+            "original_filename": fileinfo.metadata.file_name,
+            "content_type": fileinfo.metadata.content_type or "application/octet-stream"
+        }
+        
+        file_record = await db.execute(query=query, values=values)
+        logger.info(f"File record created in database with ID: {file_record}")
         
         logger.info(f"File uploaded successfully: {fileinfo.metadata.file_name}")
 
@@ -121,27 +153,47 @@ async def upload_document(
             detail=f"Error uploading file: {str(e)}"
         )
 
-@router.delete("/remove/{object_key}")
+@router.delete("/remove/{object_key:path}")
 async def remove_document(
-    fileinfo: Annotated[str, Depends(validate_object_key)],
-    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
-) -> Response:
-    """Remove a document from MinIO storage"""
-    logger.info(f"Remove endpoint triggered for object: {fileinfo.object_key}")
+    object_key: str,
+    current_user: dict = Depends(get_current_user),
+    minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
+    db = Depends(get_db)
+) -> dict:
+    """Remove a document from storage"""
+    user_id = current_user["id"]
+    user_prefix = get_user_file_prefix(user_id)
+    logger.info(f"Remove endpoint triggered by user {user_id} for object: {object_key}")
+
+    # Verify the object belongs to this user
+    if not object_key.startswith(user_prefix):
+        logger.warning(f"Unauthorized removal attempt. Object {object_key} doesn't belong to user {user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to remove this file"
+        )
 
     try:
-        # Remove the object
-        minio_client.remove_object(
-            BUCKET_NAME,
-            fileinfo.object_key
+        # Remove the object from MinIO
+        minio_client.remove_object(BUCKET_NAME, object_key)
+        
+        # Remove database record
+        query = """
+        DELETE FROM user_files 
+        WHERE user_id = :user_id AND object_key = :object_key
+        """
+        
+        result = await db.execute(
+            query=query, 
+            values={"user_id": user_id, "object_key": object_key}
         )
 
-        logger.info(f"File removed successfully: {fileinfo.object_key}")
+        logger.info(f"File removed successfully: {object_key}")
 
-        return Response(
-            message="File removed successfully",
-            fileinfo=fileinfo
-        )
+        return {
+            "message": "File removed successfully",
+            "object_key": object_key
+        }
     except Exception as e:
         logger.error(f"Error removing file: {str(e)}")
         raise HTTPException(
@@ -152,40 +204,66 @@ async def remove_document(
 @router.get("/serve/{object_key:path}")
 async def serve_file(
     object_key: str,
-    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
+    current_user: dict = Depends(get_current_user),
+    minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
+    db = Depends(get_db)
 ) -> StreamingResponse:
-    """Serve a file from MinIO storage"""
+    """Serve a file from storage"""
     # URL decode the object_key to handle properly encoded paths with slashes
     object_key = urllib.parse.unquote(object_key)
-    logger.info(f"Serve endpoint triggered for object: {object_key}")
+    
+    user_id = current_user["id"]
+    user_prefix = get_user_file_prefix(user_id)
+    logger.info(f"Serve endpoint triggered by user {user_id} for object: {object_key}")
+    
+    # Verify the object belongs to this user
+    if not object_key.startswith(user_prefix) and not object_key.startswith("system/"):
+        logger.warning(f"Unauthorized access attempt. Object {object_key} doesn't belong to user {user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this file"
+        )
     
     try:
-        # Validate object exists
-        try:
-            # Get file metadata from MinIO
-            stat = minio_client.stat_object(BUCKET_NAME, object_key)
-            
-            # Extract metadata
-            metadata = FileMetadata(
-                file_name=stat.metadata.get("x-amz-meta-file_name", object_key),
-                content_type=stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
-            )
-        except Exception as e:
-            logger.error(f"Object validation error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Object not found"
-            )
-            
+        # Lookup file metadata in database
+        query = """
+        SELECT original_filename, content_type FROM user_files 
+        WHERE user_id = :user_id AND object_key = :object_key
+        """
+        
+        file_record = await db.fetch_one(
+            query=query, 
+            values={"user_id": user_id, "object_key": object_key}
+        )
+        
         # Get file data from MinIO
         data = minio_client.get_object(BUCKET_NAME, object_key)
+        if not data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+        
+        if file_record:
+            filename = file_record["original_filename"]
+            content_type = file_record["content_type"] or "application/octet-stream"
+        else:
+            # Fall back to MinIO metadata if no DB record
+            try:
+                stat = minio_client.stat_object(BUCKET_NAME, object_key)
+                filename = stat.metadata.get("x-amz-meta-file_name", object_key.split('/')[-1])
+                content_type = stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
+            except:
+                # Last resort: extract filename from object key
+                filename = object_key.split('/')[-1]
+                content_type = "application/octet-stream"
         
         return StreamingResponse(
             data.stream(),
-            media_type=metadata.content_type,
+            media_type=content_type,
             headers={
-                'Content-Disposition': f'inline; filename="{metadata.file_name}"',
-                'Content-Type': metadata.content_type
+                'Content-Disposition': f'inline; filename="{filename}"',
+                'Content-Type': content_type
             }
         )
     except Exception as e:
@@ -197,31 +275,58 @@ async def serve_file(
 
 @router.get("/list")
 async def list_files(
-    prefix: str = None,
+    folder_path: Optional[str] = Query(None),
     recursive: bool = True,
+    current_user: dict = Depends(get_current_user),
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
-) -> List[FileInfo]:
-    """List all files in MinIO storage"""
-    logger.info(f"List endpoint triggered with prefix: {prefix}")
+) -> List[Dict]:
+    """List all files in user's storage area"""
+    user_id = current_user["id"]
+    user_prefix = get_user_file_prefix(user_id)
+    
+    # Ensure we're only listing files in the user's directory
+    if folder_path:
+        # Combine user prefix with requested folder path
+        list_prefix = f"{user_prefix}{folder_path.lstrip('/')}"
+    else:
+        list_prefix = user_prefix
+        
+    logger.info(f"List endpoint triggered by user {user_id} with prefix: {list_prefix}")
+    
     try:
-        objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=recursive)
+        objects = list(minio_client.list_objects(BUCKET_NAME, prefix=list_prefix, recursive=recursive))
         files = []
         
         for obj in objects:
-            # Get metadata for each object
-            stat = minio_client.stat_object(BUCKET_NAME, obj.object_name)
+            # Skip folder markers for cleaner output
+            if obj.object_name.endswith('.folder'):
+                continue
+                
+            # Get relative path (remove user prefix for cleaner output)
+            relative_path = obj.object_name.replace(user_prefix, '')
             
-            files.append(
-                FileInfo(
-                    object_key=obj.object_name,
-                    metadata=FileMetadata(
-                        file_name=stat.metadata.get("x-amz-meta-file_name", obj.object_name),
-                        content_type=stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
-                    )
-                )
-            )
+            try:
+                # Get metadata for each object
+                stat = minio_client.stat_object(BUCKET_NAME, obj.object_name)
+                filename = stat.metadata.get("x-amz-meta-file_name", obj.object_name.split('/')[-1])
+                content_type = stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
+            except:
+                filename = obj.object_name.split('/')[-1]
+                content_type = "application/octet-stream"
+            
+            files.append({
+                "object_key": obj.object_name,
+                "metadata": {
+                    "file_name": filename,
+                    "relative_path": relative_path,
+                    "content_type": content_type,
+                    "size": obj.size,
+                    "last_modified": obj.last_modified.isoformat() if obj.last_modified else None
+                }
+            })
         
         return files
+        
     except Exception as e:
         logger.error(f"Error listing files: {str(e)}")
         raise HTTPException(
@@ -229,61 +334,56 @@ async def list_files(
             detail=f"Error listing files: {str(e)}"
         )
 
-@router.post("/create_folder")
-async def create_folder(
-    request: FolderRequest,
+@router.post("/create-folder")
+async def create_folder_endpoint(
+    folder_name: str = Form(...),
+    parent_folder: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user),
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None
-) -> FolderResponse:
-    """Create a virtual folder in MinIO storage"""
-    logger.info(f"Create folder endpoint triggered: {request.folder_name} in path {request.folder_path}")
+):
+    """Create a folder in user's storage area"""
+    user_id = current_user["id"]
+    logger.info(f"User {user_id} creating folder: {folder_name} in {parent_folder or 'root'}")
     
     try:
-        # Build the full folder path
-        folder_path = ""
-        if request.folder_path:
-            folder_path = request.folder_path.strip('/') + '/'
-        
-        # Full path including the new folder name
-        full_path = f"{folder_path}{request.folder_name}/"
-        
-        # Create an empty placeholder file to represent the folder
-        # MinIO doesn't have real folders, so we use a placeholder object
-        placeholder_key = f"{full_path}.folder"
-        
-        # Upload an empty file as a placeholder
-        minio_client.put_object(
-            bucket_name=BUCKET_NAME,
-            object_name=placeholder_key,
-            data=io.BytesIO(b''),  # Empty content
-            length=0,  # Content length (zero)
-            content_type="application/octet-stream",
-            metadata={
-                "folder_name": request.folder_name
-            }
+        # Create folder
+        folder_path = create_folder(
+            folder_name=folder_name,
+            user_id=user_id,
+            parent_folder=parent_folder
         )
         
-        logger.info(f"Folder created successfully: {full_path}")
+        # Remove user prefix for client response
+        user_prefix = get_user_file_prefix(user_id)
+        relative_path = folder_path.replace(user_prefix, "")
         
-        return FolderResponse(
-            message="Folder created successfully",
-            folder_info={
-                "name": request.folder_name,
-                "path": full_path
+        return {
+            "message": "Folder created successfully",
+            "folder_info": {
+                "name": folder_name,
+                "path": relative_path,
+                "full_path": folder_path
             }
-        )
+        }
+        
     except Exception as e:
         logger.error(f"Error creating folder: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail=f"Error creating folder: {str(e)}"
+            detail=f"Folder creation failed: {str(e)}"
         )
 
-@router.post("/remove_folder")
-async def remove_folder(
+@router.post("/remove-folder")
+async def remove_folder_endpoint(
     request: RemoveFolderRequest,
-    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
+    current_user: dict = Depends(get_current_user),
+    minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
+    db = Depends(get_db)
 ) -> RemoveFolderResponse:
-    """Remove a folder and all its contents from MinIO storage"""
+    """Remove a folder and all its contents from user's storage area"""
+    user_id = current_user["id"]
+    user_prefix = get_user_file_prefix(user_id)
+    
     folder_path = request.folder_path.strip('/')
     if not folder_path:
         raise HTTPException(
@@ -291,9 +391,21 @@ async def remove_folder(
             detail="Folder path is required"
         )
     
+    # Make sure the folder path includes the user prefix
+    if not folder_path.startswith(user_prefix.rstrip('/')):
+        folder_path = f"{user_prefix}{folder_path}"
+    
     # Add trailing slash to match all objects with this prefix
     prefix = f"{folder_path}/"
-    logger.info(f"Removing folder: {prefix}")
+    logger.info(f"User {user_id} removing folder: {prefix}")
+    
+    # Verify this folder belongs to the user
+    if not folder_path.startswith(user_prefix):
+        logger.warning(f"Unauthorized folder removal attempt. Folder {folder_path} does not belong to user {user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to remove this folder"
+        )
     
     try:
         # List all objects with the folder prefix
@@ -317,12 +429,21 @@ async def remove_folder(
         # Remove all objects in the folder
         removed_objects = []
         for obj in objects:
+            # Remove from MinIO
             minio_client.remove_object(BUCKET_NAME, obj.object_name)
+            
+            # Also remove from database if it's a file
+            if not obj.object_name.endswith("/.folder"):
+                await db.execute(
+                    "DELETE FROM user_files WHERE user_id = :user_id AND object_key = :object_key",
+                    values={"user_id": user_id, "object_key": obj.object_name}
+                )
+                
             removed_objects.append(obj.object_name)
             logger.info(f"Removed object: {obj.object_name}")
         
         return RemoveFolderResponse(
-            message=f"Folder '{folder_path}' and {len(removed_objects)} objects removed successfully",
+            message=f"Folder '{folder_path.replace(user_prefix, '')}' and {len(removed_objects)} objects removed successfully",
             folder_path=folder_path,
             removed_objects=removed_objects
         )
@@ -335,4 +456,63 @@ async def remove_folder(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error removing folder: {str(e)}"
+        )
+
+# TODO: Error retrieving storage structure: list_files() got an unexpected keyword argument 'user_id'
+@router.get("/storage-structure")
+async def get_storage_structure(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get a breakdown of the user's storage structure for diagnostic purposes"""
+    try:
+        user_id = current_user["id"]
+        user_prefix = get_user_file_prefix(user_id)
+        
+        # Get all objects for this user
+        objects = list_files(user_id=user_id)
+        
+        # Organize by folder structure
+        structure: Dict[str, List[Dict[str, Any]]] = {"root": []}
+        
+        for obj in objects:
+            # Skip folder markers for clarity
+            if obj.object_name.endswith("/.folder"):
+                continue
+                
+            # Remove user prefix to see relative structure
+            relative_path = obj.object_name.replace(user_prefix, "")
+            parts = relative_path.split("/")
+            
+            # Files in root
+            if len(parts) == 1:
+                structure["root"].append({
+                    "name": parts[0],
+                    "size": obj.size,
+                    "full_path": obj.object_name,
+                    "relative_path": relative_path
+                })
+            else:
+                # Files in subfolders
+                folder = "/".join(parts[:-1])
+                if folder not in structure:
+                    structure[folder] = []
+                
+                structure[folder].append({
+                    "name": parts[-1],
+                    "size": obj.size,
+                    "full_path": obj.object_name,
+                    "relative_path": relative_path
+                })
+        
+        return {
+            "user_id": user_id,
+            "user_prefix": user_prefix,
+            "structure": structure
+        }
+    
+    except Exception as e:
+        logger.error(f"Diagnostic error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving storage structure: {str(e)}"
         )
