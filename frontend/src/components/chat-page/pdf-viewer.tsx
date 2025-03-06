@@ -19,6 +19,7 @@ export default function PdfViewer() {
     const [fileUrl, setFileUrl] = useState<string | null>(null)
     const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null)
     const [fileType, setFileType] = useState<'pdf' | 'txt' | null>(null)
+    const [isUploading, setIsUploading] = useState(false)
 
     // Multi-file viewing state
     const [multipleFiles, setMultipleFiles] = useState<FileToView[]>([])
