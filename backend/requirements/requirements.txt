@@ -10,3 +10,10 @@ langchain
 # torch==2.1.0+cpu
 # torchvision==0.16.0+cpu
 sentence-transformers
+databases
+asyncpg
+pyjwt>=2.8.0 
+python-jose[cryptography]>=3.3.0  # JWT tokens
+passlib[bcrypt]>=1.7.4           # Password hashing
+python-multipart>=0.0.6          # Form data parsing (already included)
+pydantic[email]>=2.0.0           # For email validation

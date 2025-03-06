@@ -20,8 +20,15 @@ RUN python -c 'import fastapi; print(f"FastAPI version: {fastapi.__version__}")'
     && python -c 'import uvicorn; print(f"Uvicorn version: {uvicorn.__version__}")' \
     && python -c 'import minio; print(f"MinIO version: {minio.__version__}")'
 
+# Copy the entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Create non-root user for security
 RUN adduser --disabled-password --gecos '' appuser
+
+# Make sure appuser can write to /tmp
+RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
@@ -29,6 +36,9 @@ USER appuser
 # Run the application (CMD will be overridden in development)
 # Copy source code
 COPY src/ /app/src/
+
+# Set the entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Run the application
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]

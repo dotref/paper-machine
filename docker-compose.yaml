@@ -68,6 +68,7 @@ services:
       - POSTGRES_HOST_AUTH_METHOD=trust
     volumes:
       - ./backend/src:/app/src
+      - ./backend/requirements/requirements.txt:/app/requirements.txt
     depends_on:
       minio:
         condition: service_healthy
