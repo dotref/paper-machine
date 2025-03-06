@@ -1,5 +1,5 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from ..database.database import get_db
 from ..models.user import UserCreate, User, Token
@@ -9,6 +9,7 @@ from ..auth.auth_utils import (
     get_password_hash, 
     get_user_by_username,
     get_current_user, 
+    oauth2_scheme,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from ..storage.minio_client import create_user_bucket
@@ -87,3 +88,47 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db = Depends(g
 async def get_current_user_info(current_user = Depends(get_current_user)):
     """Get current authenticated user information"""
     return current_user
+
+
+@router.get("/auth-debug")
+async def auth_debug(
+    request: Request, 
+    token: str = Depends(oauth2_scheme)
+):
+    """Debug endpoint for authentication issues"""
+    auth_header = request.headers.get("Authorization", "")
+    
+    result = {
+        "has_auth_header": bool(auth_header),
+        "header_value": auth_header if auth_header else None,
+        "token_from_dependency": token[:10] + "..." if token else None,  # Add this to confirm token received
+    }
+    
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        
+        try:
+            # Import here to avoid circular imports
+            from ..auth.auth_utils import SECRET_KEY, ALGORITHM
+            import jwt
+            
+            # Try to decode without verification
+            unverified = jwt.decode(token, options={"verify_signature": False})
+            result["token_unverified"] = unverified
+            
+            # Try to decode with verification
+            try:
+                verified = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                result["token_verified"] = verified
+                result["verification"] = "Success"
+            except Exception as e:
+                result["verification_error"] = str(e)
+                
+            # Check type of subject claim
+            if "sub" in unverified:
+                result["sub_type"] = type(unverified["sub"]).__name__
+                
+        except Exception as e:
+            result["decode_error"] = str(e)
+    
+    return result
