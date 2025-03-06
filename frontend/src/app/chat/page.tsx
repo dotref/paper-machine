@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import MainLayout from "@/components/main-layout";
-import ChatInterface from "@/components/chat-page/chat-interface";
-import PdfViewer from "@/components/chat-page/pdf-viewer";
+import ChatInterface from "@/components/chat/chat-interface";
+import PdfViewer from "@/components/chat/pdf-viewer";
 
 export default function ChatPage() {
     const [selectedTab, setSelectedTab] = useState("chat");

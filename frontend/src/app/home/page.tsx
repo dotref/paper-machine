@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import MainLayout from "@/components/main-layout";
-import FileManager from "@/components/home-page/file-manager";
+import FileManager from "@/components/home/file-manager";
 
 export default function HomePage() {
     const [selectedTab, setSelectedTab] = useState("home");
