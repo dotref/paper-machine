@@ -8,7 +8,7 @@ from ..database.database import get_db
 from ..models.user import TokenData
 
 # Security configuration
-SECRET_KEY = "your-secret-key-should-be-in-env-variable"  # Use environment variable in production
+SECRET_KEY = "secrete-key-👉🏼👈🏾"  # Use environment variable in production
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
