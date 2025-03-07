@@ -157,3 +157,40 @@ export const logAPIResponse = async (response: Response, url: string) => {
   }
   console.groupEnd();
 };
+
+/**
+ * Create an authenticated URL for file download/viewing
+ */
+export const getAuthenticatedFileUrl = (objectKey: string): string => {
+  const token = localStorage.getItem('auth_token');
+  
+  // Encode the object key for safe URL inclusion
+  const encodedKey = encodeURIComponent(objectKey);
+  const url = `${API_BASE_URL}/storage/serve/${encodedKey}`;
+  
+  return url;
+};
+
+/**
+ * Download a file with authentication
+ */
+export const downloadFile = async (objectKey: string, filename?: string): Promise<Blob> => {
+  const token = localStorage.getItem('auth_token');
+  
+  // Encode the object key for safe URL inclusion
+  const encodedKey = encodeURIComponent(objectKey);
+  const url = `${API_BASE_URL}/storage/serve/${encodedKey}`;
+  
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  if (!response.ok) {
+    const error = await handleErrorResponse(response);
+    throw error;
+  }
+  
+  return response.blob();
+};

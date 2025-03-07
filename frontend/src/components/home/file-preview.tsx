@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from 'next/image';
+import { useAuth } from '@/context/auth-context';
 
 interface FilePreviewProps {
   selectedFile: {
@@ -15,6 +16,7 @@ export default function FilePreview({ selectedFile }: FilePreviewProps) {
   const [fileType, setFileType] = useState<'pdf' | 'txt' | 'image' | 'unsupported' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const { token } = useAuth(); // Get auth token for requests
 
   // Function to determine file type
   const getFileType = (filename: string): 'pdf' | 'txt' | 'image' | 'unsupported' => {
@@ -40,7 +42,11 @@ export default function FilePreview({ selectedFile }: FilePreviewProps) {
       
       try {
         const encodedObjectKey = encodeURIComponent(selectedFile.object_key);
-        const response = await fetch(`http://localhost:5000/storage/serve/${encodedObjectKey}`);
+        const response = await fetch(`http://localhost:5000/storage/serve/${encodedObjectKey}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         
         if (!response.ok) {
           throw new Error(`Failed to fetch file: ${response.status}`);
@@ -74,7 +80,7 @@ export default function FilePreview({ selectedFile }: FilePreviewProps) {
         URL.revokeObjectURL(fileUrl);
       }
     };
-  }, [selectedFile]);
+  }, [selectedFile, token]);
 
   if (!selectedFile) {
     return (

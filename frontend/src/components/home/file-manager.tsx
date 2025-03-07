@@ -576,6 +576,13 @@ export default function FileManager() {
             return;
         }
 
+        // Log file info to help debug
+        console.log("Selected file for preview:", {
+            name: item.name,
+            objectKey: item.object_key,
+            type: item.type
+        });
+
         // Toggle the file selection (close if already selected)
         if (selectedFile && selectedFile.name === item.name) {
             setSelectedFile(null);
@@ -736,7 +743,7 @@ export default function FileManager() {
 
                 {/* File Preview Panel - only show when a file is selected */}
                 {selectedFile && (
-                    <div className="w-1/2 h-[70vh] relative">
+                    <div className="w-1/2 h-[70vh] relative border rounded-lg">
                         <Button 
                             variant="ghost" 
                             size="sm" 

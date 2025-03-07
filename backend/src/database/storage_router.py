@@ -559,3 +559,25 @@ async def get_storage_structure(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving storage structure: {str(e)}"
         )
+
+@router.get("/debug-file-request/{object_key:path}")
+async def debug_file_request(
+    object_key: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Debug endpoint for file request issues"""
+    # URL decode the object_key for clarity
+    decoded_key = urllib.parse.unquote(object_key)
+    
+    return {
+        "status": "success",
+        "user_id": current_user["id"],
+        "username": current_user["username"],
+        "object_key": {
+            "received": object_key,
+            "decoded": decoded_key
+        },
+        "auth_header": request.headers.get("authorization", "")[:20] + "...",
+        "user_prefix": get_user_file_prefix(current_user["id"])
+    }
