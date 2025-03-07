@@ -6,9 +6,9 @@ import logging
 import urllib.parse
 import io
 from pydantic import BaseModel
-from .dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client, get_pg_client
-from .embedding_utils import process_document_embeddings
-from .config import EMBED_ON
+from ..database.dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client, get_pg_client
+from ..database.embedding_utils import process_document_embeddings
+from ..database.config import EMBED_ON
 from ..auth.auth_utils import get_current_user
 from ..storage.minio_client import (
     upload_file,

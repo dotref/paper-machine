@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import uvicorn
-from .database.storage_router import router as storage_router
+from .routes.storage_router import router as storage_router
 from .database.config import get_minio_settings, get_postgres_settings, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION, EMBED_ON
 from .database.dependencies import get_minio_client, get_pg_client
 from .database.embedding_utils import ensure_model_is_ready
