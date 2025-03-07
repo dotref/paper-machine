@@ -294,9 +294,30 @@ async def list_files(
     logger.info(f"List endpoint triggered by user {user_id} with prefix: {list_prefix}")
     
     try:
+        # Get all objects including folders
         objects = list(minio_client.list_objects(BUCKET_NAME, prefix=list_prefix, recursive=recursive))
+        
+        # Collect folder paths (for empty folders)
+        folders = set()
+        
+        # Scan objects to find potential folder paths
+        for obj in objects:
+            if obj.object_name.endswith('.folder'):
+                # Direct folder marker
+                folder_path = obj.object_name[:-7]  # Remove '.folder'
+                folders.add(folder_path)
+            elif '/' in obj.object_name.replace(list_prefix, '', 1):
+                # Extract parent folders from object paths
+                path_parts = obj.object_name.split('/')
+                # Build each ancestor path
+                for i in range(1, len(path_parts)):
+                    folder_path = '/'.join(path_parts[:i]) + '/'
+                    if folder_path.startswith(user_prefix):
+                        folders.add(folder_path)
+        
         files = []
         
+        # Process regular files
         for obj in objects:
             # Skip folder markers for cleaner output
             if obj.object_name.endswith('.folder'):
@@ -315,13 +336,35 @@ async def list_files(
                 content_type = "application/octet-stream"
             
             files.append({
-                "object_key": obj.object_name,
+                "object_key": obj.object_key if hasattr(obj, 'object_key') else obj.object_name,
                 "metadata": {
                     "file_name": filename,
                     "relative_path": relative_path,
                     "content_type": content_type,
                     "size": obj.size,
                     "last_modified": obj.last_modified.isoformat() if obj.last_modified else None
+                }
+            })
+        
+        # Add explicit folder entries
+        for folder_path in folders:
+            # Skip if this is the current listing prefix
+            if folder_path == list_prefix:
+                continue
+                
+            # Get folder name (last part of the path)
+            folder_name = folder_path.rstrip('/').split('/')[-1]
+            # Get relative path
+            relative_path = folder_path.replace(user_prefix, '')
+            
+            files.append({
+                "object_key": folder_path + ".folder",
+                "metadata": {
+                    "file_name": folder_name,
+                    "relative_path": relative_path,
+                    "content_type": "application/directory",  # Special type for folders
+                    "size": 0,
+                    "last_modified": None
                 }
             })
         

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { FolderDialog } from "./create-folder-modal";
 import FilePreview from "./file-preview";
 import { Cross2Icon } from "@radix-ui/react-icons";
+import { useAuth } from '@/context/auth-context';
 
 // Define types for files and folders
 interface FileItem {
@@ -41,6 +42,19 @@ export default function FileManager() {
     const [statusMessage, setStatusMessage] = useState("");
     const [isUploading, setIsUploading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+    
+    // Get auth context data
+    const { token, user } = useAuth();
+    
+    // Create user prefix once when user object changes
+    const userPrefix = useMemo(() => {
+        return user ? `user-${user.id}/` : "";
+    }, [user]);
+
+    // Add authorization headers to fetch
+    const authHeaders = useMemo(() => ({
+        'Authorization': `Bearer ${token}`
+    }), [token]);
 
     // Ref for hidden file input
     const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -51,8 +65,11 @@ export default function FileManager() {
 
     // Convert backend files to our format when fetched
     useEffect(() => {
-        fetchFiles();
-    }, []);
+        // Fetch files only when token is available
+        if (token) {
+            fetchFiles();
+        }
+    }, [token]); // Re-run when token changes
 
     // Clear selected file when changing folders
     useEffect(() => {
@@ -61,12 +78,23 @@ export default function FileManager() {
 
     const fetchFiles = async () => {
         try {
-            const response = await fetch('http://localhost:5000/storage/list');
-            if (!response.ok) throw new Error('Failed to fetch files');
+            console.log("Fetching files with token:", token?.substring(0, 15));
+            const response = await fetch('http://localhost:5000/storage/list', {
+                headers: authHeaders
+            });
+            
+            if (!response.ok) {
+                console.error("Error response from /storage/list:", response.status);
+                const errorText = await response.text();
+                console.error("Error details:", errorText);
+                throw new Error(`Failed to fetch files: ${response.status}`);
+            }
+            
             const data = await response.json() as FileInfo[];
-
+            console.log("Files fetched successfully:", data?.length || 0, "items");
+            
             // Process the flat file list into a folder structure
-            const processedItems = processFilesIntoFolderStructure(data);
+            const processedItems = processFilesIntoFolderStructure(data, userPrefix);
             setItems(processedItems);
         } catch (error) {
             console.error('Error fetching files:', error);
@@ -74,37 +102,72 @@ export default function FileManager() {
         }
     };
 
-    // Updated function to process files into a folder structure
-    const processFilesIntoFolderStructure = (files: FileInfo[]): Item[] => {
+    // Updated function to process files into a folder structure without showing user prefix
+    const processFilesIntoFolderStructure = (files: FileInfo[], userPrefix: string): Item[] => {
         const root: Item[] = [];
         const folderPlaceholders: string[] = [];
-
+        
+        console.log("Processing files:", files.length, "with user prefix:", userPrefix);
+        
         // First pass: identify folder placeholders and create an array of folder paths
         files.forEach(fileInfo => {
-            if (fileInfo.object_key.endsWith('.folder')) {
-                // Extract the folder path and name from the placeholder
-                const folderPath = fileInfo.object_key.slice(0, -7); // Remove ".folder"
-                folderPlaceholders.push(folderPath);
+            // Remove user prefix from the object key for display
+            const displayObjectKey = fileInfo.object_key.startsWith(userPrefix) 
+                ? fileInfo.object_key.substring(userPrefix.length) 
+                : fileInfo.object_key;
+            
+            // Check if this is a folder marker using multiple possible forms
+            if (fileInfo.object_key.endsWith('/.folder') || 
+                fileInfo.object_key.endsWith('.folder') ||
+                fileInfo.metadata?.content_type === 'application/directory') {
+                
+                console.log("Found folder placeholder:", fileInfo.object_key);
+                // Extract the folder path from the placeholder
+                let folderPath;
+                if (fileInfo.object_key.endsWith('/.folder')) {
+                    folderPath = fileInfo.object_key.slice(0, -8); // Remove "/.folder"
+                } else if (fileInfo.object_key.endsWith('.folder')) {
+                    folderPath = fileInfo.object_key.slice(0, -7); // Remove ".folder"
+                } else {
+                    folderPath = fileInfo.object_key;
+                }
+                
+                // Remove user prefix if present
+                if (folderPath.startsWith(userPrefix)) {
+                    folderPath = folderPath.substring(userPrefix.length);
+                }
+                
+                // If the path isn't empty, add to folders
+                if (folderPath && folderPath !== '') {
+                    folderPlaceholders.push(folderPath);
+                    console.log("Added folder path:", folderPath);
+                }
             }
         });
 
         // Second pass: process regular files
         files.forEach(fileInfo => {
-            // Skip .folder placeholder files when adding files
-            if (fileInfo.object_key.endsWith('.folder')) {
+            // Skip folder placeholder files when adding files
+            if (fileInfo.object_key.endsWith('/.folder') || 
+                fileInfo.object_key.endsWith('.folder') ||
+                fileInfo.metadata?.content_type === 'application/directory') {
                 return;
             }
 
-            // Get the path segments from the object_key
-            const objectPath = fileInfo.object_key;
-            const pathSegments = objectPath.split('/');
+            // Remove user prefix from the object key for display
+            const displayObjectKey = fileInfo.object_key.startsWith(userPrefix) 
+                ? fileInfo.object_key.substring(userPrefix.length) 
+                : fileInfo.object_key;
+                
+            // Get the path segments from the display object key
+            const pathSegments = displayObjectKey.split('/');
 
             // If no folder path (no slashes), just add file to root
             if (pathSegments.length === 1) {
                 root.push({
                     name: fileInfo.metadata.file_name,
                     type: 'file',
-                    object_key: fileInfo.object_key
+                    object_key: fileInfo.object_key // Keep the full object key for backend operations
                 });
             } else {
                 // We have a file inside a folder structure
@@ -115,7 +178,7 @@ export default function FileManager() {
                 addFileToNestedFolder(root, folderPath, {
                     name: fileName,
                     type: 'file',
-                    object_key: fileInfo.object_key
+                    object_key: fileInfo.object_key // Keep the full object key for backend operations
                 });
             }
         });
@@ -134,6 +197,7 @@ export default function FileManager() {
             }
         });
 
+        console.log("Processed folder structure:", root);
         return root;
     };
 
@@ -253,16 +317,23 @@ export default function FileManager() {
             // Use the storage/upload endpoint
             const response = await fetch('http://localhost:5000/storage/upload', {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
                 body: formData,
             });
 
             const data = await response.json() as UploadResponse;
 
             if (response.ok) {
+                // Remove user prefix for display but keep it in object_key
+                let displayName = data.fileinfo.metadata.file_name;
+                let objectKey = data.fileinfo.object_key;
+                
                 const newFile: FileItem = {
-                    name: data.fileinfo.metadata.file_name,
+                    name: displayName,
                     type: 'file',
-                    object_key: data.fileinfo.object_key
+                    object_key: objectKey
                 };
 
                 // Handle uploading to current path
@@ -275,7 +346,7 @@ export default function FileManager() {
                     setItems(updatedItems);
                 }
 
-                setStatusMessage(`File "${data.fileinfo.metadata.file_name}" uploaded successfully.`);
+                setStatusMessage(`File "${displayName}" uploaded successfully.`);
 
                 // Refresh items to ensure we have the latest data
                 fetchFiles();
@@ -332,7 +403,7 @@ export default function FileManager() {
         }
     };
 
-    // Updated createFolder function to persist folders to backend
+    // Updated createFolder function to correctly handle form data
     const createFolder = async () => {
         if (!newFolderName.trim()) return;
 
@@ -341,28 +412,36 @@ export default function FileManager() {
         try {
             // Prepare the folder path (if we're in a sub-folder)
             const folderPath = currentPath.length > 0 ? currentPath.join('/') : "";
+            
+            console.log("Creating folder:", newFolderName, "in path:", folderPath);
 
-            // Call the backend API to create the folder
-            const response = await fetch('http://localhost:5000/storage/create_folder', {
+            // Use the proper format for creating folders
+            const formData = new FormData();
+            formData.append('folder_name', newFolderName);
+            if (folderPath) {
+                formData.append('parent_folder', folderPath);
+            }
+
+            // Make the request
+            const response = await fetch('http://localhost:5000/storage/create-folder', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    folder_name: newFolderName,
-                    folder_path: folderPath
-                }),
+                body: formData
             });
 
-            const data = await response.json();
-
-            if (response.ok) {
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("Folder creation error:", errorText);
+                setStatusMessage("Failed to create folder: " + errorText);
+            } else {
+                const data = await response.json();
+                console.log("Folder creation response:", data);
                 setStatusMessage(`Folder "${newFolderName}" created successfully.`);
 
                 // Refresh the file list to show the new folder
-                fetchFiles();
-            } else {
-                setStatusMessage(data.message || "Failed to create folder");
+                setTimeout(() => fetchFiles(), 500); // Small delay to ensure server has processed
             }
         } catch (error) {
             console.error('Error creating folder:', error);
@@ -391,34 +470,37 @@ export default function FileManager() {
 
         try {
             if (itemToRemove.type === 'file') {
-                // Handle file removal
+                // Handle file removal - use the full object key (includes user prefix)
                 if (!itemToRemove.object_key) {
                     throw new Error("File has no object key");
                 }
 
-                const response = await fetch(`http://localhost:5000/storage/remove/${itemToRemove.object_key}`, {
+                const response = await fetch(`http://localhost:5000/storage/remove/${encodeURIComponent(itemToRemove.object_key)}`, {
                     method: 'DELETE',
+                    headers: authHeaders
                 });
 
-                const data = await response.json();
-
-                if (response.ok) {
-                    setStatusMessage("File removed successfully");
-                } else {
-                    setStatusMessage(data.message || "Remove failed");
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("Error removing file:", errorText);
+                    setStatusMessage("Remove failed");
                     return;
                 }
+
+                const data = await response.json();
+                setStatusMessage("File removed successfully");
             } else {
-                // Handle folder removal with the new endpoint
-                // Build the full folder path
+                // Handle folder removal with the proper endpoint and path
+                // Build the folder path (without user prefix, will be added by backend)
                 const folderPath = currentPath.length > 0
                     ? `${currentPath.join('/')}/${itemName}`
                     : itemName;
 
-                const response = await fetch('http://localhost:5000/storage/remove_folder', {
+                const response = await fetch('http://localhost:5000/storage/remove-folder', { // Fix endpoint name
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify({
                         folder_path: folderPath
@@ -426,8 +508,9 @@ export default function FileManager() {
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    setStatusMessage(errorData.detail || "Failed to remove folder");
+                    const errorData = await response.text();
+                    console.error("Error removing folder:", errorData);
+                    setStatusMessage("Failed to remove folder");
                     return;
                 }
 

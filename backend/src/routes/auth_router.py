@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from ..database.database import get_db
@@ -132,3 +132,23 @@ async def auth_debug(
             result["decode_error"] = str(e)
     
     return result
+
+
+@router.get("/debug-headers")
+async def debug_headers(request: Request):
+    """Debug endpoint that returns all headers"""
+    # This will help us see if the Authorization header is being sent correctly
+    headers = {key: value for key, value in request.headers.items()}
+    
+    # Special handling for Authorization to avoid leaking full token
+    if "authorization" in headers:
+        auth = headers["authorization"]
+        if auth.startswith("Bearer "):
+            token_part = auth[7:20] + "..." if len(auth) > 27 else auth[7:]
+            headers["authorization"] = f"Bearer {token_part}"
+    
+    return {
+        "headers": headers,
+        "auth_header_present": "authorization" in [h.lower() for h in headers],
+        "server_time": datetime.now().isoformat()
+    }

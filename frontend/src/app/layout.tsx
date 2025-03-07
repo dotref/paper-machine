@@ -1,4 +1,5 @@
 import { AuthProvider } from '@/context/auth-context'
+import JwtDebugger from '@/components/auth/jwt-debugger'
 import './globals.css'
 
 export const metadata = {
@@ -16,6 +17,7 @@ export default function RootLayout({
             <body suppressHydrationWarning>
                 <AuthProvider>
                     {children}
+                    {process.env.NODE_ENV !== 'production' && <JwtDebugger />}
                 </AuthProvider>
             </body>
         </html>

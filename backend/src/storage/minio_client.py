@@ -166,11 +166,16 @@ def list_files(prefix=None, user_id=None, recursive=True):
         logger.info(f"Listing files with prefix: {list_prefix}")
             
         # List objects
-        return list(minio_client.list_objects(
+        objects = list(minio_client.list_objects(
             bucket_name=BUCKET_NAME,
             prefix=list_prefix,
             recursive=recursive
         ))
+        
+        # Log the number of objects found
+        logger.info(f"Found {len(objects)} objects with prefix: {list_prefix}")
+        
+        return objects
     
     except S3Error as e:
         logger.error(f"Error listing files: {e}")
@@ -228,14 +233,22 @@ def create_folder(folder_name, user_id, parent_folder=None):
         else:
             folder_path = f"{user_prefix}{folder_name}"
         
+        # Ensure the path ends with a slash to denote a directory
+        if not folder_path.endswith('/'):
+            folder_path = folder_path + '/'
+        
         # Create folder marker
-        folder_marker = f"{folder_path}/.folder"
+        folder_marker = f"{folder_path}.folder"
         minio_client.put_object(
             bucket_name=BUCKET_NAME,
             object_name=folder_marker,
             data=BytesIO(b""),
             length=0,
-            content_type="application/octet-stream"
+            content_type="application/octet-stream",
+            metadata={
+                "folder_name": folder_name,
+                "content_type": "application/directory"
+            }
         )
         
         logger.info(f"Folder created: {folder_path}")
