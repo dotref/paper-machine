@@ -10,7 +10,7 @@ from ..models.user import TokenData
 # Security configuration
 SECRET_KEY = "secret-key-👉🏼👈🏾"  # Use environment variable in production
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # Password hashing configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
