@@ -3,23 +3,20 @@ from minio import Minio
 from minio.error import S3Error
 from io import BytesIO
 import logging
-
-# MinIO configuration
-MINIO_URL = os.environ.get("MINIO_URL", "minio:9000")
-MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "minio_user")
-MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "minio_password")
-MINIO_SECURE = os.environ.get("MINIO_SECURE", "false").lower() == "true"
-BUCKET_NAME = "paper-machine"  # Consistent bucket name
+from .config import get_minio_settings, BUCKET_NAME
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# Get MinIO settings from config
+minio_settings = get_minio_settings()
+
 # Initialize MinIO client
 minio_client = Minio(
-    endpoint=MINIO_URL,
-    access_key=MINIO_ACCESS_KEY,
-    secret_key=MINIO_SECRET_KEY,
-    secure=MINIO_SECURE
+    endpoint=minio_settings['url'],
+    access_key=minio_settings['access_key'],
+    secret_key=minio_settings['secret_key'],
+    secure=minio_settings['secure']
 )
 
 def initialize_minio():

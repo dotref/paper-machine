@@ -14,7 +14,7 @@ docker-compose up --build
 
 ### To use the app
 
-Visit `localhost:3000`
+Visit `localhost:3000` in your web browser.
 
 ### To access MinIO console
 
@@ -26,9 +26,9 @@ Visit `localhost:5000/docs` in your web browser. You may interact with the API e
 
 ### To access pgAdmin 4 console
 
-Install pgAdmin 4.
+Visit `localhost:8888` in your web browser and login using the credentials `user-name@domain-name.com` and `strong-password`.
 
-Add a new server at `localhost:5432` and use the credentials `testuser` and `testpwd`.
+Add a new server with name `pgvector` and address `pgvector:5432` and use the credentials `testuser` and `testpwd`.
 
 ### To toggle embedding creation on (off by default)
 

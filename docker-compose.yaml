@@ -66,6 +66,8 @@ services:
       - POSTGRES_USER=testuser
       - POSTGRES_PASSWORD=testpwd
       - POSTGRES_HOST_AUTH_METHOD=trust
+      - EMBEDDING_MODEL=intfloat/multilingual-e5-small
+      - EMBEDDING_MODEL_REVISION=ffdcc22a9a5c973ef0470385cef91e1ecb461d9f
     volumes:
       - ./backend/src:/app/src
       - ./backend/requirements/requirements.txt:/app/requirements.txt

@@ -4,7 +4,7 @@ import jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from ..database.database import get_db
+from ..embedding.dependencies import get_db
 from ..models.user import TokenData
 
 # Security configuration

@@ -6,20 +6,20 @@ import logging
 import urllib.parse
 import io
 from pydantic import BaseModel
-from ..database.dependencies import FileInfo, FileMetadata, validate_upload, validate_object_key, get_minio_client, get_pg_client
-from ..database.embedding_utils import process_document_embeddings
-from ..database.config import EMBED_ON
+from ..embedding.config import EMBED_ON
+from ..embedding.dependencies import get_pg_client, get_db
+from ..embedding.embedding_utils import process_document_embeddings
 from ..auth.auth_utils import get_current_user
-from ..storage.minio_client import (
+from ..minio.config import BUCKET_NAME
+from ..minio.dependencies import FileInfo, FileMetadata, validate_upload, get_minio_client
+from ..minio.minio_utils import (
     upload_file,
     download_file,
     list_files,
     remove_file,
     create_folder,
-    get_user_file_prefix,
-    BUCKET_NAME
+    get_user_file_prefix
 )
-from ..database.database import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -143,7 +143,7 @@ async def upload_document(
         fileinfo.file_length = None
 
         return Response(
-            message="File uploaded successfully, embeddings being generated in background",
+            message="File uploaded successfully",
             fileinfo=fileinfo
         )
     except Exception as e:

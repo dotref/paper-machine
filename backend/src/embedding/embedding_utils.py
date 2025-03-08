@@ -9,7 +9,8 @@ from minio.error import S3Error
 import psycopg2
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-from .config import MODEL_CACHE_DIR, MODELS_BUCKET, BATCH_SIZE, CHUNK_SIZE, CHUNK_OVERLAP, DIMENSION
+from .config import BATCH_SIZE, CHUNK_SIZE, CHUNK_OVERLAP, DIMENSION
+from ..minio.config import  MODEL_CACHE_DIR, MODELS_BUCKET
 
 logger = logging.getLogger(__name__)
 

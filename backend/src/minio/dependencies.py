@@ -1,19 +1,12 @@
 from fastapi import Depends, HTTPException, status, UploadFile, Form, File
 from minio import Minio
 from minio.error import S3Error
-import psycopg2
-import os
-import glob
-from functools import lru_cache
-import logging
-from typing import Annotated, Optional, Any
 from pydantic import BaseModel
+from functools import lru_cache
+from typing import Annotated, Optional
+from .config import get_minio_settings, BUCKET_NAME, MODELS_BUCKET
+import logging
 import hashlib
-from pathlib import Path
-import tempfile
-from .embedding_utils import upload_model_to_minio, download_model_from_minio, create_embeddings, save_embeddings_to_vectordb
-from .config import CUSTOM_CORPUS_BUCKET as BUCKET_NAME
-from .config import VALID_CONTENT_TYPES, MODELS_BUCKET, MODEL_CACHE_DIR, get_minio_settings, get_postgres_settings
 
 logger = logging.getLogger(__name__)
 
@@ -68,37 +61,6 @@ def get_minio_client() -> Minio:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"MinIO error: {str(e)}"
-        )
-
-@lru_cache
-def get_pg_client() -> Any:
-    """
-    Creates and returns a Postgres client instance.
-    Cached to avoid creating multiple instances.
-    """
-
-    try:
-        settings = get_postgres_settings()
-        connection = psycopg2.connect(
-            host=settings['host'], 
-            database=settings['database'], 
-            user=settings['user'], 
-            password=settings['password'], 
-            port=settings['port']
-        )
-
-        return connection
-    except KeyError as e:
-        logger.error(f"Missing environment variable: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Postgres configuration error: missing {e}"
-        )
-    except psycopg2.Error as e:
-        logger.error(f"Postgres error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Postgres error: {str(e)}"
         )
 
 async def validate_file(
@@ -158,27 +120,3 @@ async def validate_upload(
             metadata=metadata
         )
     )
-
-async def validate_object_key(
-    object_key: str,
-    minio_client: Annotated[Minio, Depends(get_minio_client)] = None
-) -> FileInfo:
-    """
-    Validates whether an object exists in MinIO storage.
-    Returns the object key if valid.
-    Raises HTTPException if invalid.
-    """
-    try:
-        stat = minio_client.stat_object(BUCKET_NAME, object_key)
-        return FileInfo(
-            object_key=object_key,
-            metadata=FileMetadata(
-                file_name=stat.metadata.get("x-amz-meta-file_name", object_key),
-                content_type=stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
-            )
-        )
-    except:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Object not found"
-        )

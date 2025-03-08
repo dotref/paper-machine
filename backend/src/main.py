@@ -4,12 +4,13 @@ from contextlib import asynccontextmanager
 import logging
 import uvicorn
 from .routes.storage_router import router as storage_router
-from .database.config import get_minio_settings, get_postgres_settings, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION, EMBED_ON
-from .database.dependencies import get_minio_client, get_pg_client
-from .database.embedding_utils import ensure_model_is_ready
+from .embedding.config import get_postgres_settings, get_embedding_model_settings, EMBED_ON
+from .minio.config import get_minio_settings
+from .embedding.dependencies import get_pg_client, get_db
+from .minio.dependencies import get_minio_client
+from .embedding.embedding_utils import ensure_model_is_ready
 from .routes.auth_router import router as auth_router
-from .database.database import database
-from .storage.minio_client import initialize_minio
+from .minio.minio_utils import initialize_minio
 
 # Setup logging - Update to more detailed format
 logging.basicConfig(
@@ -33,15 +34,17 @@ async def lifespan(app: FastAPI):
         
         if EMBED_ON:
             # Ensure model is ready
-            logger.info(f"Preparing model {EMBEDDING_MODEL}")
-            model_path = ensure_model_is_ready(minio_client, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION)
+            model_settings = get_embedding_model_settings()
+            logger.info(f"Preparing model {model_settings['model']} revision {model_settings['revision']}")
+            model_path = ensure_model_is_ready(minio_client, model_settings['model'], model_settings['revision'])
             
             # Set global model path
             app.state.model_path = model_path
             logger.info(f"Model ready at {model_path}")
 
         # Connect to database
-        await database.connect()
+        db = get_db()
+        await db.connect()
         logger.info("Database connected")
         
         # Initialize MinIO storage
@@ -54,7 +57,8 @@ async def lifespan(app: FastAPI):
         raise
     finally:
         # Close database connection
-        await database.disconnect()
+        if 'db' in locals():
+            await db.disconnect()
         logger.info("Database disconnected")
         
         # Cleanup
