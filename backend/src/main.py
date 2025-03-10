@@ -3,14 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import uvicorn
+
 from .routes.storage_router import router as storage_router
-from .embedding.config import get_postgres_settings, get_embedding_model_settings, EMBED_ON
-from .minio.config import get_minio_settings
-from .embedding.dependencies import get_db
-from .minio.dependencies import get_minio_client
-from .embedding.embedding_utils import ensure_model_is_ready
 from .routes.auth_router import router as auth_router
-from .minio.minio_utils import initialize_minio
+
+from .database.config import get_postgres_settings, get_embedding_model_settings, EMBED_ON
+from .database.dependencies import get_db
+from .database.utils import ensure_model_is_ready
+
+from .minio.config import get_minio_settings
+from .minio.dependencies import get_minio_client
+from .minio.utils import initialize_minio
 
 # Setup logging - Update to more detailed format
 logging.basicConfig(

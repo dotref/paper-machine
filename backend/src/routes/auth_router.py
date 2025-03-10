@@ -1,9 +1,9 @@
 from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from ..embedding.dependencies import get_db
-from ..models.user import UserCreate, User, Token
-from ..auth.auth_utils import (
+from ..database.dependencies import get_db
+from ..auth.models import UserCreate, User, Token
+from ..auth.utils import (
     authenticate_user, 
     create_access_token, 
     get_password_hash, 
@@ -12,7 +12,7 @@ from ..auth.auth_utils import (
     oauth2_scheme,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
-from ..minio.minio_utils import create_user_bucket
+from ..minio.utils import create_user_bucket
 
 router = APIRouter(
     prefix="/auth",

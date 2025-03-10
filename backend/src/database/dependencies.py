@@ -1,7 +1,6 @@
 from fastapi import Depends, HTTPException, status, UploadFile, Form, File
 from functools import lru_cache
 import logging
-from pydantic import BaseModel
 from databases import Database
 from .config import get_postgres_settings
 

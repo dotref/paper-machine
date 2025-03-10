@@ -1,29 +1,13 @@
 from fastapi import Depends, HTTPException, status, UploadFile, Form, File
 from minio import Minio
 from minio.error import S3Error
-from pydantic import BaseModel
 from functools import lru_cache
-from typing import Annotated, Optional
 from .config import get_minio_settings, BUCKET_NAME, MODELS_BUCKET
+from .models import FileMetadata, FileInfo, UploadInfo
 import logging
 import hashlib
 
 logger = logging.getLogger(__name__)
-
-class FileMetadata(BaseModel):
-    file_name: str
-    content_type: str
-    # TODO: add other relevant metadata as needed
-
-class FileInfo(BaseModel):
-    file: Optional[UploadFile] = None
-    file_length: Optional[int] = None
-    object_key: str
-    metadata: Optional[FileMetadata] = None
-
-class UploadInfo(BaseModel):
-    duplicate: bool
-    fileinfo: FileInfo
 
 @lru_cache()
 def get_minio_client() -> Minio:

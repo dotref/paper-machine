@@ -6,13 +6,16 @@ import logging
 import urllib.parse
 from databases import Database
 from pydantic import BaseModel
-from ..embedding.config import EMBED_ON
-from ..embedding.dependencies import get_db
-from ..embedding.embedding_utils import process_document_embeddings
-from ..auth.auth_utils import get_current_user
+
+from ..database.config import EMBED_ON
+from ..database.dependencies import get_db
+from ..database.utils import process_document_embeddings
+
+from ..auth.utils import get_current_user
+
 from ..minio.config import BUCKET_NAME
-from ..minio.dependencies import FileInfo, FileMetadata, validate_upload, get_minio_client
-from ..minio.minio_utils import (
+from ..minio.dependencies import FileInfo, validate_upload, get_minio_client
+from ..minio.utils import (
     upload_file,
     download_file,
     list_files,
