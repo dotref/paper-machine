@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 from huggingface_hub import snapshot_download
 from minio import Minio
 from minio.error import S3Error
-import psycopg2
+from databases import Database
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from .config import BATCH_SIZE, CHUNK_SIZE, CHUNK_OVERLAP, DIMENSION
@@ -158,37 +158,32 @@ def create_embeddings(
     return chunks, embeddings
 
 
-def save_embeddings_to_vectordb(
-    pgvector_client: Any, 
+async def save_embeddings_to_vectordb(
+    db: Database, 
     chunks: List[str], 
     embeddings: List[List[float]]
 ) -> None:
     '''
-    This function will write an embeeding along with the embeddings text
-    to the vector db.
+    This function will write embeddings along with their text
+    to the vector db using the Database object from databases package.
     '''
     try:
-        cursor = pgvector_client.cursor()
-    
-    except (Exception, psycopg2.Error) as error:
-        print("Error while connecting", error)
+        # Prepare the query for bulk insert
+        query = "INSERT INTO embeddings (embedding, text) VALUES (:embedding, :text)"
+        values = [{"embedding": embedding, "text": text} for text, embedding in zip(chunks, embeddings)]
+        
+        # Execute the bulk insert
+        await db.execute_many(query=query, values=values)
+        
+        logger.info(f"Successfully saved {len(chunks)} embeddings to vector database")
+    except Exception as error:
+        logger.error(f"Error while writing to DB: {error}")
+        raise
 
-    try:
-        for text, embedding in zip(chunks, embeddings):
-            cursor.execute(
-                "INSERT INTO embeddings (embedding, text) VALUES (%s, %s)",
-                (embedding, text)
-            )
-        pgvector_client.commit()
-    except (Exception, psycopg2.Error) as error:
-        print("Error while writing to DB", error)
-    finally:
-        if cursor:
-            cursor.close()
 
 async def process_document_embeddings(
     minio_client: Minio,
-    pgvector_client: Any,
+    db: Database,
     bucket_name: str,
     object_key: str,
     model_path: str,
@@ -211,7 +206,7 @@ async def process_document_embeddings(
         chunks, embeddings = create_embeddings(model_path, text)
         
         # Save to vector database
-        save_embeddings_to_vectordb(pgvector_client, chunks, embeddings)
+        await save_embeddings_to_vectordb(db, chunks, embeddings)
         
         logger.info(f"Successfully processed embeddings for {object_key}")
         

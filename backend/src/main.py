@@ -6,7 +6,7 @@ import uvicorn
 from .routes.storage_router import router as storage_router
 from .embedding.config import get_postgres_settings, get_embedding_model_settings, EMBED_ON
 from .minio.config import get_minio_settings
-from .embedding.dependencies import get_pg_client, get_db
+from .embedding.dependencies import get_db
 from .minio.dependencies import get_minio_client
 from .embedding.embedding_utils import ensure_model_is_ready
 from .routes.auth_router import router as auth_router
@@ -30,7 +30,6 @@ async def lifespan(app: FastAPI):
 
         # Initialize clients
         minio_client = get_minio_client()  # should be cached
-        pg_client = get_pg_client()  # should be cached
         
         if EMBED_ON:
             # Ensure model is ready

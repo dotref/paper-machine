@@ -4,10 +4,10 @@ from typing import List, Annotated, Any, Optional, Dict
 from minio import Minio
 import logging
 import urllib.parse
-import io
+from databases import Database
 from pydantic import BaseModel
 from ..embedding.config import EMBED_ON
-from ..embedding.dependencies import get_pg_client, get_db
+from ..embedding.dependencies import get_db
 from ..embedding.embedding_utils import process_document_embeddings
 from ..auth.auth_utils import get_current_user
 from ..minio.config import BUCKET_NAME
@@ -53,8 +53,7 @@ async def upload_document(
     folder_path: str = Form(None),
     current_user: dict = Depends(get_current_user),
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
-    pgvector_client: Annotated[Any, Depends(get_pg_client)] = None,
-    db = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)] = None
 ) -> Response:
     """Upload a document to user's storage area and start embedding creation in background"""
     user_id = current_user["id"]
@@ -130,7 +129,7 @@ async def upload_document(
             background_tasks.add_task(
                 process_document_embeddings,
                 minio_client=minio_client,
-                pgvector_client=pgvector_client,
+                db=db,
                 bucket_name=BUCKET_NAME,
                 object_key=fileinfo.object_key,
                 model_path=model_path
