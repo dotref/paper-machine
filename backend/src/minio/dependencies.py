@@ -2,10 +2,13 @@ from fastapi import Depends, HTTPException, status, UploadFile, Form, File
 from minio import Minio
 from minio.error import S3Error
 from functools import lru_cache
-from .config import get_minio_settings, BUCKET_NAME, MODELS_BUCKET
+from .config import get_minio_settings, BUCKET_NAME, MODELS_BUCKET, VALID_CONTENT_TYPES
 from .models import FileMetadata, FileInfo, UploadInfo
+from ..database.dependencies import get_db
 import logging
 import hashlib
+from typing import Annotated
+from databases import Database
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +64,9 @@ async def validate_file(
     return file
 
 async def validate_upload(
-    file: UploadFile = File(...),
-    folder_path: str = Form(None),  # Add folder_path parameter
-    minio_client: Minio = Depends(get_minio_client)
+    file: Annotated[UploadFile, Depends(validate_file)],
+    # minio_client: Minio = Depends(get_minio_client)
+    db: Annotated[Database, Depends(get_db)] = None
 ) -> UploadInfo:
     """
     Validates an uploaded file, including checking if it is a duplicate.
@@ -84,23 +87,23 @@ async def validate_upload(
 
     # Check if file with same hash already exists
     try:
-        minio_client.stat_object(BUCKET_NAME, file_hash)
+        query = """
+        SELECT object_key
+        FROM objects
+        WHERE object_key = :object_key LIMIT 1
+        """
+        values = {"object_key": file_hash}
+        result = await db.fetch_one(query, values)
+
         return UploadInfo(
-            duplicate=True,
+            duplicate=result is not None,
             fileinfo=FileInfo(
+                file=file,
+                file_length=file_length,
                 object_key=file_hash,
                 metadata=metadata
             )
         )
-    except:
-        pass
-
-    return UploadInfo(
-        duplicate=False,
-        fileinfo=FileInfo(
-            file=file,
-            file_length=file_length,
-            object_key=file_hash,
-            metadata=metadata
-        )
-    )
+    except Exception as e:
+        logger.error(e)
+        raise HTTPException(status_code=500, detail="Failed to check file existence")

@@ -12,7 +12,6 @@ from ..auth.utils import (
     oauth2_scheme,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
-from ..minio.utils import create_user_bucket
 
 router = APIRouter(
     prefix="/auth",
@@ -49,13 +48,13 @@ async def register(user_data: UserCreate, db = Depends(get_db)):
     user = await db.fetch_one(query=query, values=values)
     
     # Create user storage in MinIO
-    user_id = user["id"]
-    create_user_bucket(f"user-{user_id}")
+    # user_id = user["id"]
+    # create_user_bucket(f"user-{user_id}")
     
     # Generate access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user_id},
+        data={"sub": user["id"]},
         expires_delta=access_token_expires
     )
     

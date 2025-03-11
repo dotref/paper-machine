@@ -160,6 +160,7 @@ def create_embeddings(
 
 async def save_embeddings_to_vectordb(
     db: Database, 
+    object_key: str,
     chunks: List[str], 
     embeddings: List[List[float]]
 ) -> None:
@@ -169,8 +170,11 @@ async def save_embeddings_to_vectordb(
     '''
     try:
         # Prepare the query for bulk insert
-        query = "INSERT INTO embeddings (embedding, text) VALUES (:embedding, :text)"
-        values = [{"embedding": embedding, "text": text} for text, embedding in zip(chunks, embeddings)]
+        query = """
+        INSERT INTO embeddings (object_key, embedding, text)
+        VALUES (:object_key, :embedding, :text)
+        """
+        values = [{"object_key": object_key, "embedding": embedding, "text": text} for text, embedding in zip(chunks, embeddings)]
         
         # Execute the bulk insert
         await db.execute_many(query=query, values=values)
@@ -206,7 +210,7 @@ async def process_document_embeddings(
         chunks, embeddings = create_embeddings(model_path, text)
         
         # Save to vector database
-        await save_embeddings_to_vectordb(db, chunks, embeddings)
+        await save_embeddings_to_vectordb(db, object_key, chunks, embeddings)
         
         logger.info(f"Successfully processed embeddings for {object_key}")
         
@@ -216,3 +220,59 @@ async def process_document_embeddings(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing embeddings for {object_key}: {str(e)}"
         )
+
+async def search_similar_chunks_by_objects(
+    db: Database,
+    query_embedding: List[float],
+    object_keys: List[str],
+    limit: int = 5,
+    similarity_threshold: float = 0.7
+) -> List[Dict[str, Any]]:
+    """
+    Perform semantic search on embeddings, but only for specific object_keys.
+    Returns chunks sorted by similarity, along with their source object_key.
+    
+    Args:
+        db: Database connection
+        query_embedding: The query vector to compare against
+        object_keys: List of object_keys to search within
+        limit: Maximum number of results to return
+        similarity_threshold: Minimum similarity score (0 to 1) to include in results
+    
+    Returns:
+        List of dicts containing text, similarity score, and object_key
+    """
+    try:
+        query = """
+        SELECT 
+            text,
+            object_key,
+            1 - (embedding <=> :query_embedding) as similarity
+        FROM embeddings
+        WHERE 
+            object_key = ANY(:object_keys)
+            AND 1 - (embedding <=> :query_embedding) > :threshold
+        ORDER BY similarity DESC
+        LIMIT :limit
+        """
+        values = {
+            "query_embedding": query_embedding,
+            "object_keys": object_keys,
+            "threshold": similarity_threshold,
+            "limit": limit
+        }
+        
+        results = await db.fetch_all(query, values)
+        
+        return [
+            {
+                "text": row['text'],
+                "object_key": row['object_key'],
+                "similarity": float(row['similarity'])
+            }
+            for row in results
+        ]
+        
+    except Exception as error:
+        logger.error(f"Error performing semantic search: {error}")
+        raise

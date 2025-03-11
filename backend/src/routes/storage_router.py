@@ -53,60 +53,94 @@ async def upload_document(
     request: Request,
     uploadinfo: Annotated[UploadFile, Depends(validate_upload)],
     background_tasks: BackgroundTasks,
-    folder_path: str = Form(None),
+    # folder_path: str = Form(None),
     current_user: dict = Depends(get_current_user),
     minio_client: Annotated[Minio, Depends(get_minio_client)] = None,
     db: Annotated[Database, Depends(get_db)] = None
 ) -> Response:
     """Upload a document to user's storage area and start embedding creation in background"""
     user_id = current_user["id"]
-    user_prefix = get_user_file_prefix(user_id)
-    logger.info(f"Upload endpoint triggered by user {user_id} with folder_path: {folder_path}")
+    # user_prefix = get_user_file_prefix(user_id)
+    logger.info(f"Upload endpoint triggered by user {user_id}")
 
     fileinfo = uploadinfo.fileinfo
     
     # Add user prefix to the object key to ensure user-specific storage
     # If folder_path is provided, it will be within the user's folder
-    if folder_path:
-        # Clean up the folder path
-        folder_path = folder_path.strip('/')
-        # Update object key with user prefix and folder path
-        fileinfo.object_key = f"{user_prefix}{folder_path}/{fileinfo.object_key.split('/')[-1]}"
-    else:
-        # Just add user prefix
-        fileinfo.object_key = f"{user_prefix}{fileinfo.object_key.split('/')[-1]}"
-        
-    logger.info(f"Updated object key with user prefix: {fileinfo.object_key}")
+    # if folder_path:
+    #     # Clean up the folder path
+    #     folder_path = folder_path.strip('/')
+    #     # Update object key with user prefix and folder path
+    #     fileinfo.object_key = f"{user_prefix}{folder_path}/{fileinfo.object_key.split('/')[-1]}"
+    # else:
+    #     # Just add user prefix
+    #     fileinfo.object_key = f"{user_prefix}{fileinfo.object_key.split('/')[-1]}"
+    # logger.info(f"Updated object key with user prefix: {fileinfo.object_key}")
 
-    # File is a duplicate, no need to reupload
-    if uploadinfo.duplicate:
-        logger.info("File is a duplicate, no need to reupload")
-        return Response(
-            message="File uploaded successfully",
-            fileinfo=fileinfo
-        )
+    # File is not a duplicate, need to reupload
+    if not uploadinfo.duplicate:
+        logger.info(f"File is not a duplicate, need to upload: {fileinfo.object_key}")
+        # Upload directly to MinIO using put_object
+        try:
+            minio_client.put_object(
+                bucket_name=BUCKET_NAME,
+                object_name=fileinfo.object_key,
+                data=fileinfo.file.file,
+                length=fileinfo.file_length,
+                content_type=fileinfo.metadata.content_type or "application/octet-stream",
+                metadata={
+                    "file_name": fileinfo.metadata.file_name,
+                    "content_type": fileinfo.metadata.content_type
+                }
+            )
+            
+            # Record object upload in database
+            query = """
+            INSERT INTO objects (object_key, content_type, size)
+            VALUES (:object_key, :content_type, :size)
+            """
+            values = {
+                "object_key": fileinfo.object_key,
+                "content_type": fileinfo.metadata.content_type or "application/octet-stream",
+                "size": fileinfo.file_length
+            }
+            await db.execute(query=query, values=values)
+            logger.info(f"Recorded object upload in database: {fileinfo.object_key}")
+
+            # Get model path from app state
+            if EMBED_ON:
+                model_path = request.app.state.model_path
+                if not model_path:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Model path not set in application state"
+                    )
+
+                # Add embedding creation as background task
+                background_tasks.add_task(
+                    process_document_embeddings,
+                    minio_client=minio_client,
+                    db=db,
+                    bucket_name=BUCKET_NAME,
+                    object_key=fileinfo.object_key,
+                    model_path=model_path
+                )
+                
+                logger.info(f"Started background embedding creation for: {fileinfo.metadata.file_name}")
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            logger.error(f"Error uploading file: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error uploading file to MinIO")
     
     try:
-        # Upload directly to MinIO using put_object
-        minio_client.put_object(
-            bucket_name=BUCKET_NAME,
-            object_name=fileinfo.object_key,
-            data=fileinfo.file.file,
-            length=fileinfo.file_length,
-            content_type=fileinfo.metadata.content_type,
-            metadata={
-                "file_name": fileinfo.metadata.file_name,
-                "content_type": fileinfo.metadata.content_type
-            }
-        )
-        
         # Record file metadata in database
         query = """
         INSERT INTO user_files (user_id, object_key, original_filename, content_type)
         VALUES (:user_id, :object_key, :original_filename, :content_type)
+        ON CONFLICT (user_id, object_key) DO NOTHING
         RETURNING id
         """
-        
         values = {
             "user_id": user_id,
             "object_key": fileinfo.object_key,
@@ -118,27 +152,6 @@ async def upload_document(
         logger.info(f"File record created in database with ID: {file_record}")
         
         logger.info(f"File uploaded successfully: {fileinfo.metadata.file_name}")
-
-        # Get model path from app state
-        if EMBED_ON:
-            model_path = request.app.state.model_path
-            if not model_path:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Model path not set in application state"
-                )
-
-            # Add embedding creation as background task
-            background_tasks.add_task(
-                process_document_embeddings,
-                minio_client=minio_client,
-                db=db,
-                bucket_name=BUCKET_NAME,
-                object_key=fileinfo.object_key,
-                model_path=model_path
-            )
-            
-            logger.info(f"Started background embedding creation for: {fileinfo.metadata.file_name}")
 
         # Don't return file data in response
         fileinfo.file = None
@@ -164,21 +177,18 @@ async def remove_document(
 ) -> dict:
     """Remove a document from storage"""
     user_id = current_user["id"]
-    user_prefix = get_user_file_prefix(user_id)
+    # user_prefix = get_user_file_prefix(user_id)
     logger.info(f"Remove endpoint triggered by user {user_id} for object: {object_key}")
 
     # Verify the object belongs to this user
-    if not object_key.startswith(user_prefix):
-        logger.warning(f"Unauthorized removal attempt. Object {object_key} doesn't belong to user {user_id}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to remove this file"
-        )
+    # if not object_key.startswith(user_prefix):
+    #     logger.warning(f"Unauthorized removal attempt. Object {object_key} doesn't belong to user {user_id}")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="You do not have permission to remove this file"
+    #     )
 
     try:
-        # Remove the object from MinIO
-        minio_client.remove_object(BUCKET_NAME, object_key)
-        
         # Remove database record
         query = """
         DELETE FROM user_files 
@@ -192,6 +202,30 @@ async def remove_document(
 
         logger.info(f"File removed successfully: {object_key}")
 
+        # Remove file if no longer referenced
+        query = """
+        SELECT count(*) 
+        FROM user_files 
+        WHERE object_key = :object_key
+        """
+        result = await db.execute(
+            query=query, 
+            values={"object_key": object_key}
+        )
+        if result == 0:
+            # Remove the object from MinIO
+            minio_client.remove_object(BUCKET_NAME, object_key)
+
+            # Remove the database record
+            query = """
+            DELETE FROM objects 
+            WHERE object_key = :object_key
+            """
+            await db.execute(
+                query=query, 
+                values={"object_key": object_key}
+            )
+        
         return {
             "message": "File removed successfully",
             "object_key": object_key
@@ -203,7 +237,7 @@ async def remove_document(
             detail=f"Error removing file: {str(e)}"
         )
 
-@router.get("/serve/{object_key:path}")
+@router.get("/serve/{object_key}")
 async def serve_file(
     object_key: str,
     current_user: dict = Depends(get_current_user),
@@ -215,16 +249,17 @@ async def serve_file(
     object_key = urllib.parse.unquote(object_key)
     
     user_id = current_user["id"]
-    user_prefix = get_user_file_prefix(user_id)
+    # user_prefix = get_user_file_prefix(user_id)
     logger.info(f"Serve endpoint triggered by user {user_id} for object: {object_key}")
     
     # Verify the object belongs to this user
-    if not object_key.startswith(user_prefix) and not object_key.startswith("system/"):
-        logger.warning(f"Unauthorized access attempt. Object {object_key} doesn't belong to user {user_id}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this file"
-        )
+
+    # if not object_key.startswith(user_prefix) and not object_key.startswith("system/"):
+    #     logger.warning(f"Unauthorized access attempt. Object {object_key} doesn't belong to user {user_id}")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="You do not have permission to access this file"
+    #     )
     
     try:
         # Lookup file metadata in database
@@ -237,6 +272,13 @@ async def serve_file(
             query=query, 
             values={"user_id": user_id, "object_key": object_key}
         )
+
+        if not file_record:
+            logger.warning(f"Unauthorized access attempt. User {user_id} doesn't have access to object {object_key}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to access this file"
+            )
         
         # Get file data from MinIO
         data = minio_client.get_object(BUCKET_NAME, object_key)
@@ -246,28 +288,16 @@ async def serve_file(
                 detail="File not found"
             )
         
-        if file_record:
-            filename = file_record["original_filename"]
-            content_type = file_record["content_type"] or "application/octet-stream"
-        else:
-            # Fall back to MinIO metadata if no DB record
-            try:
-                stat = minio_client.stat_object(BUCKET_NAME, object_key)
-                filename = stat.metadata.get("x-amz-meta-file_name", object_key.split('/')[-1])
-                content_type = stat.metadata.get("x-amz-meta-content_type", "application/octet-stream")
-            except:
-                # Last resort: extract filename from object key
-                filename = object_key.split('/')[-1]
-                content_type = "application/octet-stream"
-        
         return StreamingResponse(
             data.stream(),
-            media_type=content_type,
+            media_type=file_record["content_type"] or "application/octet-stream",
             headers={
-                'Content-Disposition': f'inline; filename="{filename}"',
-                'Content-Type': content_type
+                'Content-Disposition': f'inline; filename="{file_record["original_filename"]}"',
+                'Content-Type': file_record["content_type"] or "application/octet-stream"
             }
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error serving file: {str(e)}")
         raise HTTPException(
@@ -276,6 +306,47 @@ async def serve_file(
         )
 
 @router.get("/list")
+async def temp_list_files(
+    current_user: dict = Depends(get_current_user),
+    db: Annotated[Database, Depends(get_db)] = None
+):
+    """
+    List all files user has access to.
+    NOTE: At the moment, there is no folder structure in object store due to
+    the implementation of file and embedding deduplication.
+    Folder structure may need to be client-side
+    """
+    user_id = current_user["id"]
+
+    query = """
+    SELECT *
+    FROM user_files
+    WHERE user_id = :user_id
+    """
+    values = {"user_id": user_id}
+    user_files = await db.fetch_all(query=query, values=values)
+
+    files = []
+    for entry in user_files:
+        query = """
+        SELECT *
+        FROM objects
+        WHERE object_key = :object_key
+        """
+        values = {"object_key": entry.object_key}
+        obj = await db.fetch_one(query=query, values=values)
+
+        files.append({
+            "object_key": obj.object_key,
+            "metadata": {
+                "file_name": entry.original_filename,
+                "content_type": obj.content_type,
+                "size": obj.size,
+                # "last_modified": obj.last_modified.isoformat() if obj.last_modified else None
+            }
+        })
+    return files
+
 async def list_files(
     folder_path: Optional[str] = Query(None),
     recursive: bool = True,
@@ -380,6 +451,11 @@ async def list_files(
         )
 
 @router.post("/create-folder")
+async def temp_create_folder_endpoint(
+    current_user: dict = Depends(get_current_user),
+):
+    logger.info(f"User {current_user['id']} triggered folder creation")
+
 async def create_folder_endpoint(
     folder_name: str = Form(...),
     parent_folder: Optional[str] = Form(None),
@@ -419,6 +495,11 @@ async def create_folder_endpoint(
         )
 
 @router.post("/remove-folder")
+async def temp_remove_folder_endpoint(
+    current_user: dict = Depends(get_current_user),
+):
+    logger.info(f"User {current_user['id']} triggered folder removal")
+
 async def remove_folder_endpoint(
     request: RemoveFolderRequest,
     current_user: dict = Depends(get_current_user),
