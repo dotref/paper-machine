@@ -8,8 +8,7 @@ from databases import Database
 from ..database.dependencies import get_db
 from ..auth.utils import get_current_user
 from ..rag.dependencies import validate_object_keys
-
-from .models import RAGResponse
+from ..rag.models import RAGResponse
 
 logger = logging.getLogger(__name__)
 
