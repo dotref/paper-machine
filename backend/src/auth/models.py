@@ -16,7 +16,6 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    created_at: datetime
     last_login: Optional[datetime] = None
 
 class Token(BaseModel):

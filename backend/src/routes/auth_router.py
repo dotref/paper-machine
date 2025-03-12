@@ -37,7 +37,7 @@ async def register(user_data: UserCreate, db = Depends(get_db)):
     query = """
     INSERT INTO users (username, password_hash) 
     VALUES (:username, :password_hash) 
-    RETURNING id, username, created_at, last_login
+    RETURNING id, username, last_login
     """
     
     values = {

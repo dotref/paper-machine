@@ -1,12 +1,12 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TABLE IF NOT EXISTS embeddings (
-  id SERIAL PRIMARY KEY,
-  object_key VARCHAR(255) NOT NULL,
-  embedding vector,
-  text text,
-  -- created_at timestamptz DEFAULT now(),
-  FOREIGN KEY (object_key) REFERENCES objects(object_key) ON DELETE CASCADE
+-- User authentication tables
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    -- created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS objects (
@@ -18,13 +18,13 @@ CREATE TABLE IF NOT EXISTS objects (
   UNIQUE(object_key)
 );
 
--- User authentication tables
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    -- created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_login TIMESTAMP
+CREATE TABLE IF NOT EXISTS embeddings (
+  id SERIAL PRIMARY KEY,
+  object_key VARCHAR(255) NOT NULL,
+  embedding vector,
+  text text,
+  -- created_at timestamptz DEFAULT now(),
+  FOREIGN KEY (object_key) REFERENCES objects(object_key) ON DELETE CASCADE
 );
 
 -- File mapping table
