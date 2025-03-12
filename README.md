@@ -4,6 +4,20 @@
 
 Clone the repo, then follow the steps below.
 
+### Set environment 
+
+Rename `.env.template` to `.env`.
+
+#### OpenAI config
+
+In the `.env` file, fill in `OPENAI_API_KEY` and desired `OPENAI_API_MODEL`.
+
+#### Embedding config
+
+In the `.env` file, fill in desired Hugging Face embedding model in `EMBEDDING_MODEL` and `EMBEDDING_MODEL_REVISION`.
+
+To toggle embedding creation on (off by default), change the `EMBED_ON` constant to `true` for "on" and `false` for "off".
+
 ### To bring up the application (frontend, backend, and DB) in the docker compose file:
 Install Docker (and/or Docker Desktop).
 
@@ -29,7 +43,3 @@ Visit `localhost:5000/docs` in your web browser. You may interact with the API e
 Visit `localhost:8888` in your web browser and login using the credentials `user-name@domain-name.com` and `strong-password`.
 
 Add a new server with name `pgvector` and address `pgvector:5432` and use the credentials `testuser` and `testpwd`.
-
-### To toggle embedding creation on (off by default)
-
-Navigate to `backend/src/database/config.py` and change the `EMBED_ON` constant to `True` for "on" and `False` for "off". Additional embedding configs such as the model name and chunking parameters are specified in the same file. Currently, deletion of files do not delete associated embeddings, so use with care.

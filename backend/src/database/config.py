@@ -1,13 +1,10 @@
 import os
 
 # Embedding settings
-EMBED_ON = False
 BATCH_SIZE = 1
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 10
 DIMENSION = 384
-
-MODEL_PATH = None  # Will be set during startup
 
 VALID_CONTENT_TYPES = {
     "application/pdf",

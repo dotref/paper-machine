@@ -3,11 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import uvicorn
+import os
 
 from .routes.storage_router import router as storage_router
 from .routes.auth_router import router as auth_router
+from .routes.rag_router import router as rag_router
 
-from .database.config import get_postgres_settings, get_embedding_model_settings, EMBED_ON
+from .database.config import get_postgres_settings, get_embedding_model_settings
 from .database.dependencies import get_db
 from .database.utils import ensure_model_is_ready
 
@@ -34,7 +36,9 @@ async def lifespan(app: FastAPI):
         # Initialize clients
         minio_client = get_minio_client()  # should be cached
         
-        if EMBED_ON:
+        app.state.embed_on = os.environ.get('EMBED_ON', 'false').lower() == 'true'
+        if app.state.embed_on:
+            logger.info("Embedding on")
             # Ensure model is ready
             model_settings = get_embedding_model_settings()
             logger.info(f"Preparing model {model_settings['model']} revision {model_settings['revision']}")
@@ -88,6 +92,7 @@ app.add_middleware(
 # Include routers
 app.include_router(storage_router)  # Use the consolidated storage router
 app.include_router(auth_router)     # Authentication router
+app.include_router(rag_router)      # RAG router
 
 # Index Route
 @app.get("/")

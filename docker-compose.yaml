@@ -7,10 +7,10 @@ services:
      - 5432:5432
     restart: always
     environment:
-      POSTGRES_DB: vectordb
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpwd
-      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD}
     volumes:
       - ./backend/src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - pg-data:/var/lib/postgresql/data
@@ -22,8 +22,8 @@ services:
     ports:
       - "8888:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: user-name@domain-name.com
-      PGADMIN_DEFAULT_PASSWORD: strong-password
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     volumes:
       - pgadmin-data:/var/lib/pgadmin
 
@@ -34,11 +34,11 @@ services:
       - 9000:9000
       - 9001:9001
     environment:
-      MINIO_ROOT_USER: 'minio_user'
-      MINIO_ROOT_PASSWORD: 'minio_password'
-      MINIO_ADDRESS: ':9000'
-      MINIO_STORAGE_USE_HTTPS: False
-      MINIO_CONSOLE_ADDRESS: ':9001'
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ADDRESS: ${MINIO_ADDRESS}
+      MINIO_STORAGE_USE_HTTPS: ${MINIO_STORAGE_USE_HTTPS}
+      MINIO_CONSOLE_ADDRESS: ${MINIO_CONSOLE_ADDRESS}
     command: minio server /data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -56,18 +56,21 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - MINIO_URL=minio:9000
-      - MINIO_ACCESS_KEY=minio_user
-      - MINIO_SECRET_KEY=minio_password
-      - MINIO_SECURE=false
-      - POSTGRES_HOST=pgvector
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=vectordb
-      - POSTGRES_USER=testuser
-      - POSTGRES_PASSWORD=testpwd
-      - POSTGRES_HOST_AUTH_METHOD=trust
-      - EMBEDDING_MODEL=intfloat/multilingual-e5-small
-      - EMBEDDING_MODEL_REVISION=ffdcc22a9a5c973ef0470385cef91e1ecb461d9f
+      - MINIO_URL=${MINIO_URL}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_SECURE=${MINIO_SECURE}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD}
+      - EMBED_ON=${EMBED_ON}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - EMBEDDING_MODEL_REVISION=${EMBEDDING_MODEL_REVISION}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
     volumes:
       - ./backend/src:/app/src
       - ./backend/requirements/requirements.txt:/app/requirements.txt
@@ -86,7 +89,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - REACT_APP_API_URL=http://localhost:5000
+      - REACT_APP_API_URL=${REACT_APP_API_URL}
     depends_on:
       - backend
 

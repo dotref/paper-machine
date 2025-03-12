@@ -61,14 +61,7 @@ def upload_local_directory_to_minio(
             minio_client.fput_object(bucket_name, remote_path, local_file)
 
 
-def download_model_from_minio(minio_client: Minio, bucket_name: str, full_model_name: str, revision: str) -> str:
-    # Get the user name and the model name.
-    tmp = full_model_name.split('/') 
-    user_name = tmp[0]
-    model_name = tmp[1]
-
-    # The snapshot_download will use this pattern for the path name.
-    model_path_name = f'models--{user_name}--{model_name}' 
+def download_model_from_minio(minio_client: Minio, bucket_name: str, model_path_name: str, revision: str) -> str:
     # The full path on the local drive. 
     full_model_local_path = os.path.join(MODEL_CACHE_DIR, model_path_name, 'snapshots', revision)
     # The path used by MinIO. 
@@ -112,7 +105,7 @@ def ensure_model_is_ready(
         objects = minio_client.list_objects(MODELS_BUCKET, prefix=full_model_object_path, recursive=True)
         if len(list(objects)) > 0:
             logger.info(f"Model {full_model_name} exists in MinIO, downloading to local cache")
-            return download_model_from_minio(minio_client, full_model_name, revision, full_model_local_path)
+            return download_model_from_minio(minio_client, MODELS_BUCKET, model_path_name, revision)
             
         # Not in MinIO or local, download from Hugging Face and cache in MinIO
         logger.info(f"Downloading model {full_model_name} from Hugging Face")
@@ -174,7 +167,7 @@ async def save_embeddings_to_vectordb(
         INSERT INTO embeddings (object_key, embedding, text)
         VALUES (:object_key, :embedding, :text)
         """
-        values = [{"object_key": object_key, "embedding": embedding, "text": text} for text, embedding in zip(chunks, embeddings)]
+        values = [{"object_key": object_key, "embedding": str(embedding), "text": text} for text, embedding in zip(chunks, embeddings)]
         
         # Execute the bulk insert
         await db.execute_many(query=query, values=values)
@@ -220,59 +213,3 @@ async def process_document_embeddings(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing embeddings for {object_key}: {str(e)}"
         )
-
-async def search_similar_chunks_by_objects(
-    db: Database,
-    query_embedding: List[float],
-    object_keys: List[str],
-    limit: int = 5,
-    similarity_threshold: float = 0.7
-) -> List[Dict[str, Any]]:
-    """
-    Perform semantic search on embeddings, but only for specific object_keys.
-    Returns chunks sorted by similarity, along with their source object_key.
-    
-    Args:
-        db: Database connection
-        query_embedding: The query vector to compare against
-        object_keys: List of object_keys to search within
-        limit: Maximum number of results to return
-        similarity_threshold: Minimum similarity score (0 to 1) to include in results
-    
-    Returns:
-        List of dicts containing text, similarity score, and object_key
-    """
-    try:
-        query = """
-        SELECT 
-            text,
-            object_key,
-            1 - (embedding <=> :query_embedding) as similarity
-        FROM embeddings
-        WHERE 
-            object_key = ANY(:object_keys)
-            AND 1 - (embedding <=> :query_embedding) > :threshold
-        ORDER BY similarity DESC
-        LIMIT :limit
-        """
-        values = {
-            "query_embedding": query_embedding,
-            "object_keys": object_keys,
-            "threshold": similarity_threshold,
-            "limit": limit
-        }
-        
-        results = await db.fetch_all(query, values)
-        
-        return [
-            {
-                "text": row['text'],
-                "object_key": row['object_key'],
-                "similarity": float(row['similarity'])
-            }
-            for row in results
-        ]
-        
-    except Exception as error:
-        logger.error(f"Error performing semantic search: {error}")
-        raise

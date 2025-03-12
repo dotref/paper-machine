@@ -1,6 +1,6 @@
 from fastapi import UploadFile
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 class FileMetadata(BaseModel):
     file_name: str
@@ -16,3 +16,24 @@ class FileInfo(BaseModel):
 class UploadInfo(BaseModel):
     duplicate: bool
     fileinfo: FileInfo
+
+class Response(BaseModel):
+    message: str
+    fileinfo: FileInfo
+
+# Add these new models for folder operations
+class FolderRequest(BaseModel):
+    folder_name: str
+    folder_path: Optional[str] = None
+    
+class FolderResponse(BaseModel):
+    message: str
+    folder_info: dict
+
+class RemoveFolderRequest(BaseModel):
+    folder_path: str
+
+class RemoveFolderResponse(BaseModel):
+    message: str
+    folder_path: str
+    removed_objects: List[str]

@@ -7,7 +7,6 @@ import urllib.parse
 from databases import Database
 from pydantic import BaseModel
 
-from ..database.config import EMBED_ON
 from ..database.dependencies import get_db
 from ..database.utils import process_document_embeddings
 
@@ -50,8 +49,8 @@ class RemoveFolderResponse(BaseModel):
 
 @router.post("/upload")
 async def upload_document(
-    request: Request,
     uploadinfo: Annotated[UploadFile, Depends(validate_upload)],
+    request: Request,
     background_tasks: BackgroundTasks,
     # folder_path: str = Form(None),
     current_user: dict = Depends(get_current_user),
@@ -108,7 +107,7 @@ async def upload_document(
             logger.info(f"Recorded object upload in database: {fileinfo.object_key}")
 
             # Get model path from app state
-            if EMBED_ON:
+            if request.app.state.embed_on:
                 model_path = request.app.state.model_path
                 if not model_path:
                     raise HTTPException(
@@ -168,7 +167,7 @@ async def upload_document(
             detail=f"Error uploading file: {str(e)}"
         )
 
-@router.delete("/remove/{object_key:path}")
+@router.delete("/remove/{object_key}")
 async def remove_document(
     object_key: str,
     current_user: dict = Depends(get_current_user),
