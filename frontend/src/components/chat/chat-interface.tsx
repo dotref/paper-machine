@@ -39,130 +39,89 @@ export default function ChatInterface() {
         response: 'success'
     }])
     const [isLoading, setIsLoading] = useState(false)
+    const [selectedObjectKeys, setSelectedObjectKeys] = useState<string[]>([]);
     const [isSelectFilesModalOpen, setIsSelectFilesModalOpen] = useState(false)
 
     useEffect(() => {
         const handleFileUpload = (event: CustomEvent) => {
-            const { filename, status, message } = event.detail;
-            
+            const { files } = event.detail;
+    
+            const objectKeys = files.map((f: any) => f.object_key);
+            setSelectedObjectKeys(objectKeys); // ✅ store for RAG
+    
+            const fileNames = files.map((f: any) => f.filename).join(", ");
             const systemMessage: Message = {
-                text: message,
+                text: `Selected ${files.length} file(s): ${fileNames}`,
                 timestamp: new Date(),
                 sender: 'System',
-                response: status
+                response: 'success'
             };
-            
+    
             setMessages(prev => [...prev, systemMessage]);
         };
-
-        // Add event listener
+    
         window.addEventListener('fileUploaded', handleFileUpload as EventListener);
-
-        // Cleanup
         return () => {
             window.removeEventListener('fileUploaded', handleFileUpload as EventListener);
         };
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
-        if (message.trim()) {
-            setIsLoading(true)
-
-            // Add user message
-            const userMessage: Message = {
-                text: message,
+        e.preventDefault();
+        if (!message.trim()) return;
+    
+        setIsLoading(true);
+    
+        const userMessage: Message = {
+            text: message,
+            timestamp: new Date(),
+            sender: 'User',
+        };
+        setMessages(prev => [...prev, userMessage]);
+    
+        try {
+            const response = await fetch('http://localhost:5000/rag/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+                },
+                body: JSON.stringify({
+                    query: message,
+                    object_keys: selectedObjectKeys,
+                }),
+            });
+    
+            if (!response.ok) {
+                throw new Error(`HTTP error ${response.status}`);
+            }
+    
+            const data = await response.json();
+    
+            console.log("✅ RAG Response from backend:", data);
+    
+            const agentMessage: Message = {
+                text: data.response,
                 timestamp: new Date(),
-                sender: 'User'
-            }
-            setMessages(prev => [...prev, userMessage])
-
-            try {
-                const response = await fetch('http://localhost:5000/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ message: message })
-                });
-
-                if (!response.body) {
-                    throw new Error('No response body');
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let currentMessage: Message | null = null;
-
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) {
-                        console.log("Stream complete");
-                        break;
-                    }
-
-                    const decodedValue = decoder.decode(value);
-                    console.log("Received chunk:", decodedValue);
-
-                    const messages = decodedValue
-                        .split('\n')
-                        .filter(line => line.trim())
-                        .map(line => {
-                            try {
-                                return JSON.parse(line);
-                            } catch (e) {
-                                console.error('Error parsing message:', e);
-                                console.log('Problematic line:', line);
-                                return null;
-                            }
-                        })
-                        .filter(Boolean);
-
-                    console.log("Parsed messages:", messages);
-
-                    for (const msg of messages) {
-                        if (msg.is_continuation && currentMessage) {
-                            console.log("Updating existing message with:", msg.message);
-                            // Create a new message object to ensure React detects the change
-                            const updatedMessage: Message = {
-                                ...currentMessage,
-                                text: currentMessage.text + ' ' + msg.message
-                            };
-                            currentMessage = updatedMessage;
-                            setMessages(prev => prev.map(m => 
-                                m === currentMessage 
-                                    ? updatedMessage
-                                    : m
-                            ));
-                        } else {
-                            console.log("Creating new message:", msg.message);
-                            const agentMessage: Message = {
-                                text: msg.message,
-                                timestamp: new Date(msg.timestamp),
-                                sender: msg.sender,
-                                response: 'streaming',
-                                sources: msg.sources
-                            }
-                            currentMessage = agentMessage;
-                            setMessages(prev => [...prev, agentMessage]);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                const errorMessage: Message = {
-                    text: 'Error connecting to server',
-                    timestamp: new Date(),
-                    sender: 'System',
-                    response: 'error'
-                }
-                setMessages(prev => [...prev, errorMessage])
-            } finally {
-                setMessage("")
-                setIsLoading(false)
-            }
+                sender: "Assistant",
+                response: "success",
+                sources: data.sources ?? [],
+            };
+    
+            setMessages(prev => [...prev, agentMessage]);
+        } catch (error) {
+            console.error("Error:", error);
+            setMessages(prev => [...prev, {
+                text: 'Error connecting to server',
+                timestamp: new Date(),
+                sender: 'System',
+                response: 'error',
+            }]);
+        } finally {
+            setMessage("");
+            setIsLoading(false);
         }
-    }
+    };
 
     return (
         <div className="flex flex-col w-full h-full border rounded-lg">

@@ -44,9 +44,14 @@ async def lifespan(app: FastAPI):
             logger.info(f"Preparing model {model_settings['model']} revision {model_settings['revision']}")
             model_path = ensure_model_is_ready(minio_client, model_settings['model'], model_settings['revision'])
             
-            # Set global model path
+            # ✅ Set global model path
             app.state.model_path = model_path
-            logger.info(f"Model ready at {model_path}")
+            logger.info(f"✅ Model ready at {model_path}")
+
+        else:
+            # If embedding is off, still set a dummy or fallback
+            app.state.model_path = "sentence-transformers/all-MiniLM-L6-v2"
+            logger.warning("Embedding is OFF, using fallback model path.")
 
         # Connect to database
         db = get_db()
