@@ -47,7 +47,7 @@ export default function ChatInterface() {
             const files = event.detail?.files;
         
             if (!Array.isArray(files)) {
-                console.warn("❌ Invalid or missing 'files' in event.detail:", event.detail);
+                console.warn("Invalid or missing 'files' in event.detail:", event.detail);
                 return;
             }
         
@@ -96,32 +96,43 @@ export default function ChatInterface() {
                     object_keys: selectedObjectKeys,
                 }),
             });
-    
+        
             if (!response.ok) {
-                throw new Error(`HTTP error ${response.status}`);
+                const errorText = await response.text();
+                throw new Error(`HTTP error ${response.status}: ${errorText}`);
             }
-    
-            const data = await response.json();
-    
-            console.log("✅ RAG Response from backend:", data);
-    
+        
+            let data: any;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {
+                console.error("Failed to parse JSON from backend:", jsonErr);
+                const fallbackText = await response.text();
+                console.error("Raw response body:", fallbackText);
+                throw new Error("Backend returned non-JSON response.");
+            }
+        
             const agentMessage: Message = {
-                text: data.response,
+                text: data.response || 'No response from assistant.',
                 timestamp: new Date(),
                 sender: "Assistant",
                 response: "success",
                 sources: data.sources ?? [],
             };
-    
+        
             setMessages(prev => [...prev, agentMessage]);
-        } catch (error) {
-            console.error("Error:", error);
-            setMessages(prev => [...prev, {
-                text: 'Error connecting to server',
+        
+        } catch (error: any) {
+            console.error("RAG chat error:", error);
+        
+            const errorMessage: Message = {
+                text: `Server error: ${error.message || "Unknown error occurred."}`,
                 timestamp: new Date(),
                 sender: 'System',
-                response: 'error',
-            }]);
+                response: 'error'
+            };
+        
+            setMessages(prev => [...prev, errorMessage]);
         } finally {
             setMessage("");
             setIsLoading(false);

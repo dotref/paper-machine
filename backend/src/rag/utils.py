@@ -50,6 +50,9 @@ def get_retrieval_tool_description() -> Dict[str, Any]:
         }
     }
 
+
+
+
 async def create_rag_response(
     db: Database,
     query: str,
@@ -59,7 +62,6 @@ async def create_rag_response(
     """
     Creates a response using the LLM, which can optionally retrieve context.
     """
-    # First, let the LLM decide if it needs to retrieve context
     messages = [
         {
             "role": "system", 
@@ -73,7 +75,7 @@ async def create_rag_response(
     sources = []
 
     try:
-        # Let LLM decide if retrieval is needed
+        logger.info(" Calling OpenAI to decide if context is needed...")
         decision_response = await client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
@@ -82,25 +84,25 @@ async def create_rag_response(
         )
         
         first_message = decision_response.choices[0].message
+        logger.info(f" OpenAI decision: {first_message.tool_calls}")
 
-        # If LLM decided to use retrieval
         if first_message.tool_calls:
+            logger.info(" Embedding user query and retrieving chunks...")
             query_embedding = await embed_user_query(query, model_path=model_path)
 
-            # Get relevant chunks
             chunks = await retrieve_relevant_chunks(
                 db=db,
                 query_embedding=query_embedding,
                 object_keys=object_keys,
             )
-            
-            # Format context
+
+            logger.info(f"📚 Retrieved {len(chunks)} chunks")
+            if chunks:
+                logger.debug(f"🔎 Top chunk preview: {chunks[0]['text'][:100]}...")
+
             context = "\n\n".join([chunk["text"] for chunk in chunks])
-            
-            # Save sources
             sources = list({chunk["object_key"] for chunk in chunks})
 
-            # Add context to messages
             messages.append({
                 "role": "system",
                 "content": f"""Here is the relevant context:
@@ -111,17 +113,20 @@ async def create_rag_response(
                 If the answer cannot be found in the context, do not answer the question. Instead, apologize and say that you did not find an answer in the context."""
             })
 
-        # Generate final response
+        logger.info("🗣️ Generating final response from OpenAI...")
         final_response = await client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
         )
-        
-        return final_response.choices[0].message.content, sources
+
+        result = final_response.choices[0].message.content
+        logger.info(f"✅ Final response: {result[:100]}...")
+
+        return result, sources
 
     except Exception as e:
-        logger.error(f"Error in create_rag_response: {str(e)}")
-        return RAGResponse(response=f"Error generating response: {str(e)}", sources=[])
+        logger.exception(f" Error in create_rag_response: {str(e)}")
+        return f"Error generating response: {str(e)}", []
 
 
 async def embed_user_query(

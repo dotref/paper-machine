@@ -32,16 +32,16 @@ async def chat(
     query = payload.query
     object_keys = payload.object_keys
 
-    logger.info(f"RAG chat request: {query} with source objects: {object_keys}")
-    response, sources = await create_rag_response(
+    response_text, sources = await create_rag_response(
         db=db,
         query=query,
         object_keys=object_keys,
         model_path=request.app.state.model_path
     )
-    logger.info(f"RAG response: {response}")
+
+    logger.info(f"Returning response to frontend: {response_text[:100]}...")
     return RAGResponse(
-        response=response,
+        response=response_text,
         sources=sources
     )
     
