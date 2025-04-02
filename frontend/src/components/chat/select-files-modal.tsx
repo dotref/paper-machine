@@ -277,7 +277,10 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
         const fileNames = selectedFiles.map(file => file.name).join(", ");
         const uploadEvent = new CustomEvent('fileUploaded', {
             detail: {
-                filename: fileNames,
+                files: selectedFiles.map(file => ({
+                    object_key: file.object_key,
+                    filename: file.name
+                })),
                 status: 'success',
                 message: `Selected ${selectedFiles.length} file(s): ${fileNames}`
             }
@@ -502,9 +505,9 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                             onClick={viewSelectedFiles}
                             disabled={selectedFiles.length === 0}
                             size="sm"
-                        >
-                            View Selected ({selectedFiles.length})
-                        </Button>
+                            >
+                            Use in Chat ({selectedFiles.length})
+                            </Button>
                     </div>
                 </div>
             </div>

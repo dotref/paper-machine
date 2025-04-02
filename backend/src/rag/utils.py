@@ -4,6 +4,7 @@ from openai import AsyncOpenAI
 from .config import OPENAI_API_KEY, OPENAI_MODEL, SYSTEM_PROMPT, LIMIT_RETRIEVED_CHUNKS, SIMILARITY_THRESHOLD
 from databases import Database
 from sentence_transformers import SentenceTransformer
+from ..rag.models import RAGResponse
 import logging
 import json
 
@@ -120,7 +121,7 @@ async def create_rag_response(
 
     except Exception as e:
         logger.error(f"Error in create_rag_response: {str(e)}")
-        return f"Error generating response: {str(e)}"
+        return RAGResponse(response=f"Error generating response: {str(e)}", sources=[])
 
 
 async def embed_user_query(
