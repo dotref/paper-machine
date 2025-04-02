@@ -98,22 +98,24 @@ export default function ChatInterface() {
             });
         
             if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error ${response.status}: ${errorText}`);
+                const rawError = await response.text();
+                console.error("🚫 Error response text:", rawError);
+                throw new Error(`HTTP error ${response.status}`);
             }
         
-            let data: any;
+            const rawText = await response.text(); // this line will NOT throw, even if it's not JSON
+            console.log("📦 Raw text:", rawText);
+        
+            let data;
             try {
-                data = await response.json();
-            } catch (jsonErr) {
-                console.error("Failed to parse JSON from backend:", jsonErr);
-                const fallbackText = await response.text();
-                console.error("Raw response body:", fallbackText);
-                throw new Error("Backend returned non-JSON response.");
+                data = JSON.parse(rawText);
+            } catch (err) {
+                console.error("❌ JSON parse error:", err);
+                throw new Error("Backend returned invalid JSON");
             }
         
             const agentMessage: Message = {
-                text: data.response || 'No response from assistant.',
+                text: data.response,
                 timestamp: new Date(),
                 sender: "Assistant",
                 response: "success",

@@ -147,20 +147,17 @@ async def embed_user_query(
 async def search_similar_chunks_by_objects(
     db: Database,
     query_embedding: List[float],
-    object_keys: List[str]
+    object_keys: List[str],
+    limit: int = 5,
+    similarity_threshold: float = 0.7
 ) -> List[Dict[str, Any]]:
-    """
-    Perform semantic search on embeddings, but only for specific object_keys.
-    Returns chunks sorted by similarity, along with their source object_key.
-    """
     logger.info(f"Searching for similar chunks by objects: {object_keys}")
     try:
-        # performs cosine similarity on select document embeddings
         query = """
         SELECT 
             text,
             object_key,
-            1 - (embedding <=> :query_embedding) as similarity
+            1 - (embedding <=> :query_embedding) AS similarity
         FROM embeddings
         WHERE 
             object_key = ANY(:object_keys)
@@ -169,23 +166,23 @@ async def search_similar_chunks_by_objects(
         LIMIT :limit
         """
         values = {
-            "query_embedding": str(query_embedding),
+            "query_embedding": f"[{', '.join(map(str, query_embedding))}]",  # 🛠️ format for pgvector
             "object_keys": object_keys,
-            "threshold": SIMILARITY_THRESHOLD,
-            "limit": LIMIT_RETRIEVED_CHUNKS
+            "threshold": similarity_threshold,
+            "limit": limit,
         }
-        
+
         results = await db.fetch_all(query, values)
-        
+
         return [
             {
-                "text": row['text'],
-                "object_key": row['object_key'],
-                "similarity": float(row['similarity'])
+                "text": row["text"],
+                "object_key": row["object_key"],
+                "similarity": float(row["similarity"]),
             }
             for row in results
         ]
-        
+
     except Exception as error:
         logger.error(f"Error performing semantic search: {error}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(error))

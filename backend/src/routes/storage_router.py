@@ -124,6 +124,8 @@ async def upload_document(
                     object_key=fileinfo.object_key,
                     model_path=model_path
                 )
+
+                logger.info(f"[Embedding] 📦 Background task scheduled for {fileinfo.object_key}")
                 
                 logger.info(f"Started background embedding creation for: {fileinfo.metadata.file_name}")
         except HTTPException as e:
