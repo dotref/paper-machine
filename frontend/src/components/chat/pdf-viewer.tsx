@@ -59,9 +59,19 @@ export default function PdfViewer() {
                 let url;
 
                 if (object_key) {
-                    // Properly encode object_key for URL path
                     const encodedObjectKey = encodeURIComponent(object_key);
-                    const response = await fetch(`http://localhost:5000/storage/serve/${encodedObjectKey}`);
+                    const token = localStorage.getItem("auth_token");
+                
+                    if (!token) {
+                        console.warn("🚫 No auth token found. Cannot fetch file.");
+                        throw new Error("Missing authentication token");
+                    }
+                
+                    const response = await fetch(`http://localhost:5000/storage/serve/${encodedObjectKey}`, {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        }
+                    });
                     
                     if (!response.ok) {
                         console.error(`Error fetching file with status: ${response.status} ${response.statusText}`);

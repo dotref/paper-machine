@@ -44,11 +44,16 @@ export default function ChatInterface() {
 
     useEffect(() => {
         const handleFileUpload = (event: CustomEvent) => {
-            const { files } = event.detail;
-    
+            const files = event.detail?.files;
+        
+            if (!Array.isArray(files)) {
+                console.warn("❌ Invalid or missing 'files' in event.detail:", event.detail);
+                return;
+            }
+        
             const objectKeys = files.map((f: any) => f.object_key);
             setSelectedObjectKeys(objectKeys); // ✅ store for RAG
-    
+        
             const fileNames = files.map((f: any) => f.filename).join(", ");
             const systemMessage: Message = {
                 text: `Selected ${files.length} file(s): ${fileNames}`,
@@ -56,7 +61,7 @@ export default function ChatInterface() {
                 sender: 'System',
                 response: 'success'
             };
-    
+        
             setMessages(prev => [...prev, systemMessage]);
         };
     
