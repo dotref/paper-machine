@@ -92,7 +92,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend:/app:ro
+      - ./frontend:/app
       - frontend-node-modules:/app/node_modules
       - frontend-next:/app/.next
     environment:
