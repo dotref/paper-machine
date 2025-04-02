@@ -69,30 +69,39 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get
         detail="Invalid authentication credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
+    print("🔐 Received token:", token)
+
     try:
         # Decode JWT
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        
+
         user_id: int = payload.get("sub")
+        print("Decoded user_id (sub):", user_id)
+
         if user_id is None:
             raise credentials_exception
-        
+
         try:
             user_id = int(user_id)
         except (ValueError, TypeError):
+            print("Token 'sub' could not be converted to int:", user_id)
             raise credentials_exception
-            
+
         token_exp = payload.get("exp")
         token_data = TokenData(user_id=user_id, exp=token_exp)
-    except jwt.PyJWTError:
+
+    except jwt.PyJWTError as e:
+        print("JWT decoding failed:", e)
         raise credentials_exception
-        
+
     # Fetch user from database
     query = "SELECT * FROM users WHERE id = :id"
     user = await db.fetch_one(query=query, values={"id": token_data.user_id})
-    
+
     if user is None:
+        print("No user found in DB for ID:", token_data.user_id)
         raise credentials_exception
-        
+
+    print("✅ Authenticated user ID:", token_data.user_id)
     return user
