@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD}
     volumes:
-      - ./backend/src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backend/src/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pg-data:/var/lib/postgresql/data
 
   pgadmin:
@@ -30,6 +30,7 @@ services:
   minio:
     image: quay.io/minio/minio
     container_name: minio
+    restart: always
     ports:
       - 9000:9000
       - 9001:9001
@@ -46,13 +47,14 @@ services:
       timeout: 20s
       retries: 3
     volumes:
-      - ~/minio-data:/data
+      - minio-data:/data
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fastapi-backend
+    restart: always
     ports:
       - "5000:5000"
     environment:
@@ -73,9 +75,11 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL}
       - AUTH_SECRET=${AUTH_SECRET}
     volumes:
-      - ./backend/src:/app/src
-      - ./backend/requirements/requirements.txt:/app/requirements.txt
+      - ./backend/src:/app/src:ro
+      - ./backend/requirements/requirements.txt:/app/requirements.txt:ro
     depends_on:
+      pgvector:
+        condition: service_started
       minio:
         condition: service_healthy
 
@@ -84,11 +88,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: react-frontend
+    restart: always
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./frontend:/app:ro
+      - frontend-node-modules:/app/node_modules
+      - frontend-next:/app/.next
     environment:
       - REACT_APP_API_URL=${REACT_APP_API_URL}
     depends_on:
@@ -97,3 +103,6 @@ services:
 volumes:
   pg-data:
   pgadmin-data:
+  frontend-node-modules:
+  frontend-next:
+  minio-data:
