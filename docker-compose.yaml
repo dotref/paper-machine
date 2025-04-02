@@ -71,6 +71,7 @@ services:
       - EMBEDDING_MODEL_REVISION=${EMBEDDING_MODEL_REVISION}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL}
+      - AUTH_SECRET=${AUTH_SECRET}
     volumes:
       - ./backend/src:/app/src
       - ./backend/requirements/requirements.txt:/app/requirements.txt
