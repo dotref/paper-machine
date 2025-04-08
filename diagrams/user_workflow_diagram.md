@@ -47,7 +47,7 @@ flowchart TD
     classDef process fill:#80b3ff,stroke:#003380,stroke-width:1px,color:#001a40
     classDef io fill:#99e699,stroke:#006600,stroke-width:1px,color:#003300
     classDef decision fill:#ffcc66,stroke:#cc7700,stroke-width:1px,color:#663d00
-    classDef end fill:#a6a6a6,stroke:#333333,stroke-width:1px,color:#1a1a1a
+    classDef endpoint fill:#a6a6a6,stroke:#333333,stroke-width:1px,color:#1a1a1a
     
     %% Apply styles
     class Start start

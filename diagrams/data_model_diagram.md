@@ -64,7 +64,7 @@ erDiagram
         array references
     }
     
-    %% Entity relationships with improved colors
+    %% Entity relationships
     USERS ||--o{ FILES : "uploads" 
     USERS ||--o{ FOLDERS : "creates"
     USERS ||--o{ CHAT_SESSIONS : "participates"
@@ -77,21 +77,4 @@ erDiagram
     
     CHAT_SESSIONS ||--o{ MESSAGES : "contains"
     MESSAGES }o--o{ FILES : "references"
-    
-    %% Entity attribute styling
-    classDef users fill:#a8d1ff,stroke:#0047b3
-    classDef files fill:#ffd9b3,stroke:#cc5200
-    classDef folders fill:#ffe6b3,stroke:#cc8800
-    classDef embeddings fill:#d9b3ff,stroke:#6600cc
-    classDef chunks fill:#ffb3d9,stroke:#cc0066
-    classDef chat fill:#b3ffcc,stroke:#00994d
-    classDef messages fill:#d9ffb3,stroke:#66b300
-    
-    class USERS users
-    class FILES files
-    class FOLDERS folders
-    class EMBEDDINGS embeddings
-    class CHUNKS chunks
-    class CHAT_SESSIONS chat
-    class MESSAGES messages
 ``` 
