@@ -9,22 +9,27 @@ This directory contains a comprehensive set of system diagrams for the Paper Mac
    - Shows all major components and their relationships
    - Includes frontend, backend, and storage subsystems
 
-2. **RAG Flow Diagram** ([rag_flow_diagram.md](rag_flow_diagram.md))
+2. **Simplified System Diagram** ([simplified_system_diagram.md](simplified_system_diagram.md))
+   - Condensed version of the system diagram for presentations and posters
+   - Focuses on key components and main interactions
+   - Uses larger, bolder styling for better visibility from a distance
+
+3. **RAG Flow Diagram** ([rag_flow_diagram.md](rag_flow_diagram.md))
    - Sequence diagram showing the RAG (Retrieval Augmented Generation) process
    - Illustrates document upload, embedding creation, and the query process
    - Shows interactions between services during the RAG workflow
 
-3. **Deployment Diagram** ([deployment_diagram.md](deployment_diagram.md))
+4. **Deployment Diagram** ([deployment_diagram.md](deployment_diagram.md))
    - Docker-based deployment architecture
    - Container relationships and network connections
    - External service integrations
 
-4. **User Workflow Diagram** ([user_workflow_diagram.md](user_workflow_diagram.md))
+5. **User Workflow Diagram** ([user_workflow_diagram.md](user_workflow_diagram.md))
    - User journey through the system
    - Authentication, document management, and chat interaction flows
    - Decision points and process sequences
 
-5. **Data Model Diagram** ([data_model_diagram.md](data_model_diagram.md))
+6. **Data Model Diagram** ([data_model_diagram.md](data_model_diagram.md))
    - Database entity relationships
    - Key data structures and their relationships
    - Storage model for users, files, embeddings, and chat data
