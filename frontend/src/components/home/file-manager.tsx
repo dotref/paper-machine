@@ -645,9 +645,9 @@ export default function FileManager() {
                             `Upload${currentPath.length > 0 ? ' to ' + currentPath[currentPath.length - 1] : ''}`
                         )}
                     </Button>
-                    <Button onClick={toggleFolderModal} size="md">
+                    {/* <Button onClick={toggleFolderModal} size="md">
                         New Folder{currentPath.length > 0 ? ' in ' + currentPath[currentPath.length - 1] : ''}
-                    </Button>
+                    </Button> */}
                     <input
                         type="file"
                         accept=".pdf,.txt"
