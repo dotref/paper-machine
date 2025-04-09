@@ -15,7 +15,6 @@ class UserCreate(UserBase):
         return v
 
 class User(UserBase):
-    id: int
     last_login: Optional[datetime] = None
 
 class Token(BaseModel):
@@ -23,5 +22,5 @@ class Token(BaseModel):
     token_type: str
 
 class TokenData(BaseModel):
-    user_id: int
+    username: str
     exp: int

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { FolderDialog } from "./create-folder-modal";
+import { ShareFileDialog } from "./share-file-modal";
 import FilePreview from "./file-preview";
 import { Cross2Icon } from "@radix-ui/react-icons";
 import { useAuth } from '@/context/auth-context';
@@ -42,6 +43,8 @@ export default function FileManager() {
     const [statusMessage, setStatusMessage] = useState("");
     const [isUploading, setIsUploading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [fileToShare, setFileToShare] = useState<FileItem | null>(null);
     
     // Get auth context data
     const { token, user } = useAuth();
@@ -597,6 +600,47 @@ export default function FileManager() {
         setSelectedFile(null);
     };
 
+    // Share file with another user
+    const shareFile = async (targetUsername: string) => {
+        if (!fileToShare?.object_key) {
+            setStatusMessage("No file selected for sharing");
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                `http://localhost:5000/storage/share`,
+                {
+                    method: 'POST',
+                    headers: {
+                        ...authHeaders,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        object_key: fileToShare.object_key,
+                        target_username: targetUsername,
+                    }),
+                }
+            );
+
+            const data = await response.json();
+
+            if (response.ok) {
+                setStatusMessage(`File shared successfully with ${targetUsername}`);
+            } else {
+                setStatusMessage(data.detail || 'Error sharing file');
+            }
+        } catch (error) {
+            console.error('Share error:', error);
+            setStatusMessage("Error sharing file");
+        }
+    };
+
+    const handleShareClick = (file: FileItem) => {
+        setFileToShare(file);
+        setIsShareModalOpen(true);
+    };
+
     return (
         <div className="p-4">
             {/* Title with breadcrumb navigation and action buttons */}
@@ -645,9 +689,9 @@ export default function FileManager() {
                             `Upload${currentPath.length > 0 ? ' to ' + currentPath[currentPath.length - 1] : ''}`
                         )}
                     </Button>
-                    <Button onClick={toggleFolderModal} size="md">
+                    {/* <Button onClick={toggleFolderModal} size="md">
                         New Folder{currentPath.length > 0 ? ' in ' + currentPath[currentPath.length - 1] : ''}
-                    </Button>
+                    </Button> */}
                     <input
                         type="file"
                         accept=".pdf,.txt"
@@ -696,16 +740,32 @@ export default function FileManager() {
                                             </span>
                                         </span>
                                     )}
-                                    <Button 
-                                        variant="ghost" 
-                                        className="text-red-500 ml-2 flex-shrink-0" 
-                                        onClick={(e) => {
-                                            e.stopPropagation(); 
-                                            confirmRemove(item.name);
-                                        }}
-                                    >
-                                        Remove
-                                    </Button>
+                                    <div className="flex gap-2">
+                                        {item.type === 'file' && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-blue-500"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleShareClick(item as FileItem);
+                                                }}
+                                            >
+                                                Share
+                                            </Button>
+                                        )}
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-red-500"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                confirmRemove(item.name);
+                                            }}
+                                        >
+                                            Remove
+                                        </Button>
+                                    </div>
                                 </div>
                                 {fileToRemove === item.name && (
                                     <div className="flex justify-end space-x-2 mt-2">
@@ -771,6 +831,20 @@ export default function FileManager() {
                 setFolderName={setNewFolderName}
                 createFolder={createFolder}
             />
+
+            {/* Share file dialog */}
+            {fileToShare && (
+                <ShareFileDialog
+                    open={isShareModalOpen}
+                    handleOpen={() => {
+                        setIsShareModalOpen(false);
+                        setFileToShare(null);
+                    }}
+                    fileName={fileToShare.name}
+                    objectKey={fileToShare.object_key || ""}
+                    onShare={shareFile}
+                />
+            )}
         </div>
     );
 }

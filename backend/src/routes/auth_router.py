@@ -7,7 +7,7 @@ from ..auth.utils import (
     authenticate_user, 
     create_access_token, 
     get_password_hash, 
-    get_user_by_username,
+    get_user,
     get_current_user, 
     oauth2_scheme,
     ACCESS_TOKEN_EXPIRE_MINUTES
@@ -22,7 +22,7 @@ router = APIRouter(
 async def register(user_data: UserCreate, db = Depends(get_db)):
     """Register a new user and return an access token"""
     # Check if username exists
-    existing_user = await get_user_by_username(db, user_data.username)
+    existing_user = await get_user(db, user_data.username)
     
     if existing_user:
         raise HTTPException(
@@ -37,7 +37,7 @@ async def register(user_data: UserCreate, db = Depends(get_db)):
     query = """
     INSERT INTO users (username, password_hash) 
     VALUES (:username, :password_hash) 
-    RETURNING id, username, last_login
+    RETURNING username, last_login
     """
     
     values = {
@@ -47,14 +47,10 @@ async def register(user_data: UserCreate, db = Depends(get_db)):
     
     user = await db.fetch_one(query=query, values=values)
     
-    # Create user storage in MinIO
-    # user_id = user["id"]
-    # create_user_bucket(f"user-{user_id}")
-    
     # Generate access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user["id"]},
+        data={"sub": user["username"]},
         expires_delta=access_token_expires
     )
     
@@ -76,7 +72,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db = Depends(g
     # Generate access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user["id"]},
+        data={"sub": user["username"]},
         expires_delta=access_token_expires
     )
     

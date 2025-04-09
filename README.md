@@ -18,6 +18,16 @@ In the `.env` file, fill in desired Hugging Face embedding model in `EMBEDDING_M
 
 To toggle embedding creation on (off by default), change the `EMBED_ON` constant to `true` for "on" and `false` for "off".
 
+#### Auth config
+
+Generate a secret key, one way is to use the command below:
+
+```
+openssl rand -hex 32
+```
+
+Copy the output and fill in `AUTH_SECRET` in the `.env` file.
+
 ### To bring up the application (frontend, backend, and DB) in the docker compose file:
 Install Docker (and/or Docker Desktop).
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import jwt
 from passlib.context import CryptContext
@@ -22,14 +22,14 @@ def get_password_hash(password):
     """Generate password hash"""
     return pwd_context.hash(password)
 
-async def get_user_by_username(db, username: str):
+async def get_user(db, username: str):
     """Get user by username"""
     query = "SELECT * FROM users WHERE username = :username"
     return await db.fetch_one(query=query, values={"username": username})
 
 async def authenticate_user(db, username: str, password: str):
     """Authenticate user by username and password"""
-    user = await get_user_by_username(db, username)
+    user = await get_user(db, username)
     
     if not user:
         return False
@@ -38,10 +38,10 @@ async def authenticate_user(db, username: str, password: str):
         return False
     
     # Update last login timestamp
-    update_query = "UPDATE users SET last_login = :last_login WHERE id = :id"
+    update_query = "UPDATE users SET last_login = :last_login WHERE username = :username"
     await db.execute(
         query=update_query, 
-        values={"last_login": datetime.now(), "id": user["id"]}
+        values={"last_login": datetime.now(), "username": username}
     )
     
     return user
@@ -51,14 +51,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         
     to_encode.update({"exp": expire})
-    if "sub" in to_encode and isinstance(to_encode["sub"], int):
-        to_encode["sub"] = str(to_encode["sub"])  # Convert to string
-
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -75,33 +72,22 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get
     try:
         # Decode JWT
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-
-        user_id: int = payload.get("sub")
-        print("Decoded user_id (sub):", user_id)
-
-        if user_id is None:
+        
+        username: str = payload.get("sub")
+        if username is None:
             raise credentials_exception
-
-        try:
-            user_id = int(user_id)
-        except (ValueError, TypeError):
-            print("Token 'sub' could not be converted to int:", user_id)
-            raise credentials_exception
-
+        
         token_exp = payload.get("exp")
-        token_data = TokenData(user_id=user_id, exp=token_exp)
-
-    except jwt.PyJWTError as e:
-        print("JWT decoding failed:", e)
+        token_data = TokenData(username=username, exp=token_exp)
+    except jwt.PyJWTError:
         raise credentials_exception
 
     # Fetch user from database
-    query = "SELECT * FROM users WHERE id = :id"
-    user = await db.fetch_one(query=query, values={"id": token_data.user_id})
-
+    user = await get_user(db, token_data.username)
+    
     if user is None:
-        print("No user found in DB for ID:", token_data.user_id)
+        print("No user found in DB for username:", token_data.username)
         raise credentials_exception
 
-    print("✅ Authenticated user ID:", token_data.user_id)
+    print("✅ Authenticated user ID:", token_data.username)
     return user

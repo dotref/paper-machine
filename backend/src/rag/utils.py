@@ -17,16 +17,12 @@ async def retrieve_relevant_chunks(
     db: Database,
     query_embedding: List[float],
     object_keys: List[str],
-    max_chunks: int = 5,
-    similarity_threshold: float = 0.7
 ) -> List[Dict[str, Any]]:
     """Tool to retrieve relevant chunks based on query embedding."""
     chunks = await search_similar_chunks_by_objects(
         db=db,
         query_embedding=query_embedding,
         object_keys=object_keys,
-        limit=max_chunks,
-        similarity_threshold=similarity_threshold
     )
     return chunks
 
