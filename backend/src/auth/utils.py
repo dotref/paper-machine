@@ -66,7 +66,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get
         detail="Invalid authentication credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
+    print("🔐 Received token:", token)
+
     try:
         # Decode JWT
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -79,11 +81,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get
         token_data = TokenData(username=username, exp=token_exp)
     except jwt.PyJWTError:
         raise credentials_exception
-        
+
     # Fetch user from database
     user = await get_user(db, token_data.username)
     
     if user is None:
+        print("No user found in DB for username:", token_data.username)
         raise credentials_exception
-        
+
+    print("✅ Authenticated user ID:", token_data.username)
     return user

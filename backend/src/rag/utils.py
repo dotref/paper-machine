@@ -4,6 +4,7 @@ from openai import AsyncOpenAI
 from .config import OPENAI_API_KEY, OPENAI_MODEL, SYSTEM_PROMPT, LIMIT_RETRIEVED_CHUNKS, SIMILARITY_THRESHOLD
 from databases import Database
 from sentence_transformers import SentenceTransformer
+from ..rag.models import RAGResponse
 import logging
 import json
 
@@ -45,6 +46,9 @@ def get_retrieval_tool_description() -> Dict[str, Any]:
         }
     }
 
+
+
+
 async def create_rag_response(
     db: Database,
     query: str,
@@ -54,7 +58,6 @@ async def create_rag_response(
     """
     Creates a response using the LLM, which can optionally retrieve context.
     """
-    # First, let the LLM decide if it needs to retrieve context
     messages = [
         {
             "role": "system", 
@@ -68,7 +71,7 @@ async def create_rag_response(
     sources = []
 
     try:
-        # Let LLM decide if retrieval is needed
+        logger.info(" Calling OpenAI to decide if context is needed...")
         decision_response = await client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
@@ -77,25 +80,25 @@ async def create_rag_response(
         )
         
         first_message = decision_response.choices[0].message
+        logger.info(f" OpenAI decision: {first_message.tool_calls}")
 
-        # If LLM decided to use retrieval
         if first_message.tool_calls:
+            logger.info(" Embedding user query and retrieving chunks...")
             query_embedding = await embed_user_query(query, model_path=model_path)
 
-            # Get relevant chunks
             chunks = await retrieve_relevant_chunks(
                 db=db,
                 query_embedding=query_embedding,
                 object_keys=object_keys,
             )
-            
-            # Format context
+
+            logger.info(f"📚 Retrieved {len(chunks)} chunks")
+            if chunks:
+                logger.debug(f"🔎 Top chunk preview: {chunks[0]['text'][:100]}...")
+
             context = "\n\n".join([chunk["text"] for chunk in chunks])
-            
-            # Save sources
             sources = list({chunk["object_key"] for chunk in chunks})
 
-            # Add context to messages
             messages.append({
                 "role": "system",
                 "content": f"""Here is the relevant context:
@@ -106,17 +109,20 @@ async def create_rag_response(
                 If the answer cannot be found in the context, do not answer the question. Instead, apologize and say that you did not find an answer in the context."""
             })
 
-        # Generate final response
+        logger.info("🗣️ Generating final response from OpenAI...")
         final_response = await client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
         )
-        
-        return final_response.choices[0].message.content, sources
+
+        result = final_response.choices[0].message.content
+        logger.info(f"✅ Final response: {result[:100]}...")
+
+        return result, sources
 
     except Exception as e:
-        logger.error(f"Error in create_rag_response: {str(e)}")
-        return f"Error generating response", []
+        logger.exception(f" Error in create_rag_response: {str(e)}")
+        return f"Error generating response: {str(e)}", []
 
 
 async def embed_user_query(
@@ -137,20 +143,17 @@ async def embed_user_query(
 async def search_similar_chunks_by_objects(
     db: Database,
     query_embedding: List[float],
-    object_keys: List[str]
+    object_keys: List[str],
+    limit: int = 5,
+    similarity_threshold: float = 0.7
 ) -> List[Dict[str, Any]]:
-    """
-    Perform semantic search on embeddings, but only for specific object_keys.
-    Returns chunks sorted by similarity, along with their source object_key.
-    """
     logger.info(f"Searching for similar chunks by objects: {object_keys}")
     try:
-        # performs cosine similarity on select document embeddings
         query = """
         SELECT 
             text,
             object_key,
-            1 - (embedding <=> :query_embedding) as similarity
+            1 - (embedding <=> :query_embedding) AS similarity
         FROM embeddings
         WHERE 
             object_key = ANY(:object_keys)
@@ -159,23 +162,23 @@ async def search_similar_chunks_by_objects(
         LIMIT :limit
         """
         values = {
-            "query_embedding": str(query_embedding),
+            "query_embedding": f"[{', '.join(map(str, query_embedding))}]",  # 🛠️ format for pgvector
             "object_keys": object_keys,
-            "threshold": SIMILARITY_THRESHOLD,
-            "limit": LIMIT_RETRIEVED_CHUNKS
+            "threshold": similarity_threshold,
+            "limit": limit,
         }
-        
+
         results = await db.fetch_all(query, values)
-        
+
         return [
             {
-                "text": row['text'],
-                "object_key": row['object_key'],
-                "similarity": float(row['similarity'])
+                "text": row["text"],
+                "object_key": row["object_key"],
+                "similarity": float(row["similarity"]),
             }
             for row in results
         ]
-        
+
     except Exception as error:
         logger.error(f"Error performing semantic search: {error}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(error))

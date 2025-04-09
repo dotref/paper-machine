@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@material-tailwind/react";
+import { useAuth } from "@/context/auth-context";
 
 interface FileMetadata {
     file_name: string;
@@ -32,7 +33,9 @@ interface SelectFilesModalProps {
     onClose: () => void;
 }
 
+
 export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalProps) {
+    const { token } = useAuth();
     const [fileStructure, setFileStructure] = useState<Item[]>([]);
     const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
     const [currentPath, setCurrentPath] = useState<string[]>([]);
@@ -95,7 +98,21 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
         
         try {
             // Use the storage/list endpoint to fetch files from MinIO
-            const response = await fetch('http://localhost:5000/storage/list');
+
+            if (!token || token === "null") {
+              console.error("🚫 No valid token found. Skipping /storage/list request.");
+              setError("You must be logged in to view files.");
+              setIsLoading(false);
+              return;
+            }
+            
+            console.log("📦 Token before /storage/list:", token);
+            
+            const response = await fetch('http://localhost:5000/storage/list', {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            });
             
             if (!response.ok) {
                 throw new Error(`Failed to fetch files: ${response.status} ${response.statusText}`);
@@ -260,7 +277,10 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
         const fileNames = selectedFiles.map(file => file.name).join(", ");
         const uploadEvent = new CustomEvent('fileUploaded', {
             detail: {
-                filename: fileNames,
+                files: selectedFiles.map(file => ({
+                    object_key: file.object_key,
+                    filename: file.name
+                })),
                 status: 'success',
                 message: `Selected ${selectedFiles.length} file(s): ${fileNames}`
             }
@@ -485,9 +505,9 @@ export default function SelectFilesModal({ isOpen, onClose }: SelectFilesModalPr
                             onClick={viewSelectedFiles}
                             disabled={selectedFiles.length === 0}
                             size="sm"
-                        >
-                            View Selected ({selectedFiles.length})
-                        </Button>
+                            >
+                            Use in Chat ({selectedFiles.length})
+                            </Button>
                     </div>
                 </div>
             </div>

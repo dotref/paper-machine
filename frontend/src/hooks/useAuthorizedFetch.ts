@@ -22,6 +22,8 @@ export function useAuthorizedFetch<T = any>(): UseFetchResult<T> {
 
   const execute = useCallback(
     async (url: string, options: FetchOptions = {}): Promise<T | null> => {
+      console.log("Token in useAuthorizedFetch:", token); // 🔍 Add this line
+      
       if (!token && !options.skipAuthRedirect) {
         console.error('No token available');
         router.push('/login');

@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, status
 import glob
 import logging
 import os
+import json
 from typing import Any, Dict, List, Tuple
 from huggingface_hub import snapshot_download
 from minio import Minio
@@ -122,33 +123,52 @@ def ensure_model_is_ready(
 
 
 def create_embeddings(
-    model_path: str, 
-    text: str, 
-    chunk_size: int = CHUNK_SIZE, 
+    model_path: str,
+    text: str,
+    chunk_size: int = CHUNK_SIZE,
     chunk_overlap: int = CHUNK_OVERLAP
 ) -> Tuple[List[str], List[List[float]]]:
-    '''
-    This function will create embeddings for a given file using a model.
+    """
+    This function creates embeddings for a given file using a SentenceTransformer model.
     Returns a tuple of (chunks, embeddings)
-    '''
-    # Load the model
-    model = SentenceTransformer(model_path)
+    """
+    logger.info(f"[Embedding] Loading model from: {model_path}")
     
+    # Load model and force CPU usage and PyTorch backend to avoid ONNX issues
+    model = SentenceTransformer(model_path)
+    model._target_device = "cpu"
+    if hasattr(model, "_model") and hasattr(model._model, "config_dict"):
+        model._model.config_dict["framework"] = "pt"
+
+    logger.info("[Embedding] Model loaded")
+
     # Create text splitter
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         length_function=len,
     )
-    
+
     # Split text into chunks
     chunks = text_splitter.split_text(text)
-    
+    logger.info(f"[Embedding] Split text into {len(chunks)} chunks")
+
+    if not chunks:
+        logger.warning("[Embedding] No text chunks generated — skipping encoding")
+        return [], []
+
     # Generate embeddings
-    embeddings = model.encode(chunks, batch_size=BATCH_SIZE).tolist()
-    
-    logger.info(f"Created {len(chunks)} embeddings")
+    logger.info(f"[Embedding] Encoding {len(chunks)} chunks")
+    embeddings = model.encode(
+        chunks,
+        batch_size=BATCH_SIZE,
+        device="cpu",  # Ensure CPU usage
+        convert_to_numpy=True  # Ensures .tolist() compatibility
+    ).tolist()
+    logger.info(f"[Embedding] Finished encoding {len(embeddings)} chunks")
+
     return chunks, embeddings
+
 
 
 async def save_embeddings_to_vectordb(
@@ -157,24 +177,40 @@ async def save_embeddings_to_vectordb(
     chunks: List[str], 
     embeddings: List[List[float]]
 ) -> None:
-    '''
-    This function will write embeddings along with their text
-    to the vector db using the Database object from databases package.
-    '''
+    """
+    Save text chunks and their embeddings into the vector database.
+    """
     try:
+        if not chunks or not embeddings:
+            logger.warning(f"[Embedding] No data to insert for object {object_key}")
+            return
+
+        if len(chunks) != len(embeddings):
+            logger.error(f"[Embedding] Mismatch: {len(chunks)} chunks vs {len(embeddings)} embeddings")
+            return
+
         # Prepare the query for bulk insert
         query = """
         INSERT INTO embeddings (object_key, embedding, text)
         VALUES (:object_key, :embedding, :text)
         """
-        values = [{"object_key": object_key, "embedding": str(embedding), "text": text} for text, embedding in zip(chunks, embeddings)]
-        
-        # Execute the bulk insert
+
+        values = [
+            {
+                "object_key": object_key,
+                "embedding": json.dumps(embedding),  # ⬅️ serialize the list to JSON
+                "text": chunk
+            }
+            for chunk, embedding in zip(chunks, embeddings)
+        ]
+
+        logger.debug(f"[Embedding] Saving first vector to DB: {embeddings[0][:5]}... (truncated)")
         await db.execute_many(query=query, values=values)
-        
-        logger.info(f"Successfully saved {len(chunks)} embeddings to vector database")
+
+        logger.info(f"[Embedding] Successfully saved {len(values)} embeddings for {object_key}")
+
     except Exception as error:
-        logger.error(f"Error while writing to DB: {error}")
+        logger.error(f"[Embedding] Error while writing to DB: {error}")
         raise
 
 
@@ -191,24 +227,37 @@ async def process_document_embeddings(
     2. Create embeddings in chunks
     3. Save embeddings to vector database
     '''
+    logger.info(f"[Embedding] Starting embedding creation for document: {object_key}")
+
     try:
-        logger.info(f"Starting embedding creation for document {object_key}")
-        
-        # Get document content from MinIO
+        logger.info(f"[Embedding] Fetching document from MinIO: {object_key}")
         data = minio_client.get_object(bucket_name, object_key)
-        
-        text = data.read().decode('utf-8')
-        
+
+        # Try to read and decode the file
+        try:
+            raw_text = data.read()
+            text = raw_text.decode('utf-8', errors='replace')
+            logger.info(f"[Embedding] Read {len(text)} characters from file")
+        except Exception as e:
+            logger.error(f"[Embedding]  Failed to read or decode file {object_key}: {str(e)}")
+            return
+
         # Create embeddings
         chunks, embeddings = create_embeddings(model_path, text)
-        
+
+        logger.info(f"[Embedding]  Chunked into {len(chunks)} parts")
+        logger.info(f"[Embedding]  Created {len(embeddings)} embeddings")
+
+        if not chunks or not embeddings:
+            logger.warning(f"[Embedding] No embeddings generated — skipping DB write for {object_key}")
+            return
+
         # Save to vector database
         await save_embeddings_to_vectordb(db, object_key, chunks, embeddings)
-        
-        logger.info(f"Successfully processed embeddings for {object_key}")
-        
+        logger.info(f"[Embedding] Successfully processed embeddings for {object_key}")
+
     except Exception as e:
-        logger.error(f"Error processing embeddings for {object_key}: {str(e)}")
+        logger.error(f"[Embedding] Error processing embeddings for {object_key}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing embeddings for {object_key}: {str(e)}"

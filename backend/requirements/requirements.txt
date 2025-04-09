@@ -4,12 +4,13 @@ python-multipart>=0.0.18
 minio==7.2.0
 python-dotenv==1.0.0
 pyprojroot==0.3.0
-huggingface-hub
+huggingface-hub == 0.13.4
 psycopg2-binary
 langchain
 # torch==2.1.0+cpu
 # torchvision==0.16.0+cpu
-sentence-transformers
+sentence-transformers==2.2.2
+transformers==4.29.0
 databases
 asyncpg
 pyjwt>=2.8.0 
