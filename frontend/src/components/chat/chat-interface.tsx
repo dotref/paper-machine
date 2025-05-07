@@ -7,7 +7,7 @@ import SelectFilesModal from "./select-files-modal"
 
 interface Source {
     file_name: string;
-    page_label: string;
+    object_key: string;
     text: string;
 }
 
@@ -23,7 +23,7 @@ interface Message {
 const getUniqueSources = (sources: Source[]): Source[] => {
     const seen = new Set<string>();
     return sources.filter(source => {
-        const key = `${source.file_name}-${source.page_label}`;
+        const key = `${source.file_name}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -99,7 +99,7 @@ export default function ChatInterface() {
         
             if (!response.ok) {
                 const rawError = await response.text();
-                console.error("🚫 Error response text:", rawError);
+                console.error("Error response text:", rawError);
                 throw new Error(`HTTP error ${response.status}`);
             }
         
@@ -110,7 +110,7 @@ export default function ChatInterface() {
             try {
                 data = JSON.parse(rawText);
             } catch (err) {
-                console.error("❌ JSON parse error:", err);
+                console.error("JSON parse error:", err);
                 throw new Error("Backend returned invalid JSON");
             }
         
@@ -188,13 +188,13 @@ export default function ChatInterface() {
                                                 const displayEvent = new CustomEvent('displayFile', {
                                                     detail: {
                                                         filename: source.file_name,
-                                                        pageLabel: source.page_label,
+                                                        object_key: source.object_key
                                                     }
                                                 });
                                                 window.dispatchEvent(displayEvent);
                                             }}
                                         >
-                                            {source.file_name} - {source.page_label}
+                                            {source.file_name}
                                         </Button>
                                     ))}
                                 </div>

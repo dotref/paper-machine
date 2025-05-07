@@ -92,12 +92,23 @@ async def create_rag_response(
                 object_keys=object_keys,
             )
 
-            logger.info(f"📚 Retrieved {len(chunks)} chunks")
+            logger.info(f"Retrieved {len(chunks)} chunks")
             if chunks:
-                logger.debug(f"🔎 Top chunk preview: {chunks[0]['text'][:100]}...")
+                logger.debug(f"Top chunk preview: {chunks[0]['text'][:100]}...")
 
             context = "\n\n".join([chunk["text"] for chunk in chunks])
-            sources = list({chunk["object_key"] for chunk in chunks})
+            for chunk in chunks:
+                # get original file name from object key
+                file_name = await db.fetch_one(
+                    query="SELECT original_filename FROM user_files WHERE object_key = :object_key",
+                    values={"object_key": chunk["object_key"]}
+                )
+
+                sources.append({
+                    "object_key": chunk["object_key"],
+                    "file_name": file_name["original_filename"],
+                    "text": chunk["text"]
+                })
 
             messages.append({
                 "role": "system",
@@ -109,19 +120,19 @@ async def create_rag_response(
                 If the answer cannot be found in the context, do not answer the question. Instead, apologize and say that you did not find an answer in the context."""
             })
 
-        logger.info("🗣️ Generating final response from OpenAI...")
+        logger.info("Generating final response from OpenAI...")
         final_response = await client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
         )
 
         result = final_response.choices[0].message.content
-        logger.info(f"✅ Final response: {result[:100]}...")
+        logger.info(f"Final response: {result[:100]}...")
 
         return result, sources
 
     except Exception as e:
-        logger.exception(f" Error in create_rag_response: {str(e)}")
+        logger.exception(f"Error in create_rag_response: {str(e)}")
         return f"Error generating response: {str(e)}", []
 
 

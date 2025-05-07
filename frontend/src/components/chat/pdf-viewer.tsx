@@ -63,7 +63,7 @@ export default function PdfViewer() {
                     const token = localStorage.getItem("auth_token");
                 
                     if (!token) {
-                        console.warn("🚫 No auth token found. Cannot fetch file.");
+                        console.warn("No auth token found. Cannot fetch file.");
                         throw new Error("Missing authentication token");
                     }
                 
@@ -140,7 +140,6 @@ export default function PdfViewer() {
             detail: { 
                 filename: nextFile.filename, 
                 object_key: nextFile.object_key,
-                pageLabel: '0',
                 isMultiFile: true,
                 fileIndex: nextIndex,
                 totalFiles: multipleFiles.length
